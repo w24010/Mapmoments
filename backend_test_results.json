@@ -1,0 +1,13 @@
+{
+  "timestamp": "2025-10-28T01:30:25.442634",
+  "total_tests": 1,
+  "passed_tests": 0,
+  "success_rate": 0.0,
+  "test_details": [
+    {
+      "test": "User Registration",
+      "success": false,
+      "details": "Status: 502, Response: "
+    }
+  ]
+}
