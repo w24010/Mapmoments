@@ -1,15 +1,20 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, File, UploadFile, Form, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
+from motor.core import AgnosticGridFSBucket
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List
+from pydantic import BaseModel, Field, ConfigDict, EmailStr
+from typing import List, Optional
 import uuid
-from datetime import datetime, timezone
-
+from datetime import datetime, timezone, timedelta
+import bcrypt
+import jwt
+from bson import ObjectId
+import base64
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -17,56 +22,425 @@ load_dotenv(ROOT_DIR / '.env')
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+db = client[os.environ.get('DB_NAME', 'mapmoments_db')]
+fs = AsyncIOMotorGridFSBucket(db)
 
-# Create the main app without a prefix
+# JWT Configuration
+JWT_SECRET = os.environ.get('JWT_SECRET', 'your-secret-key-change-in-production')
+JWT_ALGORITHM = 'HS256'
+JWT_EXPIRATION_HOURS = 168  # 7 days
+
+# Create the main app
 app = FastAPI()
-
-# Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
+security = HTTPBearer()
 
+# ===== Models =====
+class UserCreate(BaseModel):
+    username: str
+    email: EmailStr
+    password: str
 
-# Define Models
-class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")  # Ignore MongoDB's _id field
-    
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+class User(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    username: str
+    email: str
+    profile_photo: Optional[str] = None
+    friends: List[str] = Field(default_factory=list)
+    friend_requests: List[str] = Field(default_factory=list)
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
+class Pin(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    username: str
+    title: str
+    description: str
+    latitude: float
+    longitude: float
+    privacy: str = "public"  # public, friends, private
+    likes: List[str] = Field(default_factory=list)  # user IDs who liked
+    comments: List[dict] = Field(default_factory=list)
+    media_count: int = 0
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
-# Add your routes to the router instead of directly to app
-@api_router.get("/")
-async def root():
-    return {"message": "Hello World"}
+class PinCreate(BaseModel):
+    title: str
+    description: str
+    latitude: float
+    longitude: float
+    privacy: str = "public"
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
+class Comment(BaseModel):
+    text: str
+
+class Media(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    pin_id: str
+    user_id: str
+    file_id: str  # GridFS file ID
+    media_type: str  # photo or video
+    caption: Optional[str] = None
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+# ===== Auth Helpers =====
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+def verify_password(password: str, hashed: str) -> bool:
+    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+
+def create_token(user_id: str) -> str:
+    expiration = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS)
+    return jwt.encode({'user_id': user_id, 'exp': expiration}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def decode_token(token: str) -> dict:
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    payload = decode_token(credentials.credentials)
+    user = await db.users.find_one({"id": payload['user_id']}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    return user
+
+# ===== Auth Routes =====
+@api_router.post("/auth/register")
+async def register(user_data: UserCreate):
+    # Check if user exists
+    existing = await db.users.find_one({"$or": [{"email": user_data.email}, {"username": user_data.username}]}, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=400, detail="User already exists")
     
-    # Convert to dict and serialize datetime to ISO string for MongoDB
-    doc = status_obj.model_dump()
-    doc['timestamp'] = doc['timestamp'].isoformat()
+    # Create user
+    user = User(
+        username=user_data.username,
+        email=user_data.email
+    )
+    user_dict = user.model_dump()
+    user_dict['password_hash'] = hash_password(user_data.password)
     
-    _ = await db.status_checks.insert_one(doc)
-    return status_obj
+    await db.users.insert_one(user_dict)
+    
+    token = create_token(user.id)
+    return {"token": token, "user": {"id": user.id, "username": user.username, "email": user.email}}
 
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
+@api_router.post("/auth/login")
+async def login(login_data: UserLogin):
+    user = await db.users.find_one({"email": login_data.email}, {"_id": 0})
+    if not user or not verify_password(login_data.password, user['password_hash']):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    # Convert ISO string timestamps back to datetime objects
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
-            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-    
-    return status_checks
+    token = create_token(user['id'])
+    return {"token": token, "user": {"id": user['id'], "username": user['username'], "email": user['email']}}
 
-# Include the router in the main app
+@api_router.get("/auth/me")
+async def get_me(current_user: dict = Depends(get_current_user)):
+    user = dict(current_user)
+    user.pop('password_hash', None)
+    return user
+
+# ===== Pin Routes =====
+@api_router.post("/pins", response_model=Pin)
+async def create_pin(pin_data: PinCreate, current_user: dict = Depends(get_current_user)):
+    pin = Pin(
+        user_id=current_user['id'],
+        username=current_user['username'],
+        **pin_data.model_dump()
+    )
+    await db.pins.insert_one(pin.model_dump())
+    return pin
+
+@api_router.get("/pins")
+async def get_pins(privacy: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    query = {}
+    
+    if privacy:
+        query['privacy'] = privacy
+    else:
+        # Get public pins and user's own pins and friends' pins
+        friends = current_user.get('friends', [])
+        query = {
+            "$or": [
+                {"privacy": "public"},
+                {"user_id": current_user['id']},
+                {"$and": [{"privacy": "friends"}, {"user_id": {"$in": friends}}]}
+            ]
+        }
+    
+    pins = await db.pins.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return pins
+
+@api_router.get("/pins/{pin_id}")
+async def get_pin(pin_id: str, current_user: dict = Depends(get_current_user)):
+    pin = await db.pins.find_one({"id": pin_id}, {"_id": 0})
+    if not pin:
+        raise HTTPException(status_code=404, detail="Pin not found")
+    
+    # Check privacy
+    if pin['privacy'] == 'private' and pin['user_id'] != current_user['id']:
+        raise HTTPException(status_code=403, detail="Access denied")
+    if pin['privacy'] == 'friends' and pin['user_id'] != current_user['id']:
+        if pin['user_id'] not in current_user.get('friends', []):
+            raise HTTPException(status_code=403, detail="Access denied")
+    
+    return pin
+
+@api_router.delete("/pins/{pin_id}")
+async def delete_pin(pin_id: str, current_user: dict = Depends(get_current_user)):
+    pin = await db.pins.find_one({"id": pin_id}, {"_id": 0})
+    if not pin:
+        raise HTTPException(status_code=404, detail="Pin not found")
+    if pin['user_id'] != current_user['id']:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    # Delete associated media
+    media_items = await db.media.find({"pin_id": pin_id}, {"_id": 0}).to_list(1000)
+    for media in media_items:
+        try:
+            await fs.delete(ObjectId(media['file_id']))
+        except:
+            pass
+    await db.media.delete_many({"pin_id": pin_id})
+    
+    await db.pins.delete_one({"id": pin_id})
+    return {"message": "Pin deleted"}
+
+# ===== Like Routes =====
+@api_router.post("/pins/{pin_id}/like")
+async def like_pin(pin_id: str, current_user: dict = Depends(get_current_user)):
+    pin = await db.pins.find_one({"id": pin_id}, {"_id": 0})
+    if not pin:
+        raise HTTPException(status_code=404, detail="Pin not found")
+    
+    likes = pin.get('likes', [])
+    if current_user['id'] in likes:
+        likes.remove(current_user['id'])
+    else:
+        likes.append(current_user['id'])
+    
+    await db.pins.update_one({"id": pin_id}, {"$set": {"likes": likes}})
+    return {"likes": len(likes), "liked": current_user['id'] in likes}
+
+# ===== Comment Routes =====
+@api_router.post("/pins/{pin_id}/comments")
+async def add_comment(pin_id: str, comment: Comment, current_user: dict = Depends(get_current_user)):
+    pin = await db.pins.find_one({"id": pin_id}, {"_id": 0})
+    if not pin:
+        raise HTTPException(status_code=404, detail="Pin not found")
+    
+    new_comment = {
+        "id": str(uuid.uuid4()),
+        "user_id": current_user['id'],
+        "username": current_user['username'],
+        "text": comment.text,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.pins.update_one({"id": pin_id}, {"$push": {"comments": new_comment}})
+    return new_comment
+
+# ===== Media Routes =====
+@api_router.post("/pins/{pin_id}/media")
+async def upload_media(
+    pin_id: str,
+    file: UploadFile = File(...),
+    caption: Optional[str] = Form(None),
+    current_user: dict = Depends(get_current_user)
+):
+    pin = await db.pins.find_one({"id": pin_id}, {"_id": 0})
+    if not pin:
+        raise HTTPException(status_code=404, detail="Pin not found")
+    if pin['user_id'] != current_user['id']:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    # Determine media type
+    content_type = file.content_type or ""
+    if content_type.startswith('image/'):
+        media_type = "photo"
+    elif content_type.startswith('video/'):
+        media_type = "video"
+    else:
+        raise HTTPException(status_code=400, detail="Invalid file type")
+    
+    # Upload to GridFS
+    file_content = await file.read()
+    file_id = await fs.upload_from_stream(
+        file.filename,
+        file_content,
+        metadata={"content_type": content_type}
+    )
+    
+    # Create media record
+    media = Media(
+        pin_id=pin_id,
+        user_id=current_user['id'],
+        file_id=str(file_id),
+        media_type=media_type,
+        caption=caption
+    )
+    await db.media.insert_one(media.model_dump())
+    
+    # Update pin media count
+    await db.pins.update_one({"id": pin_id}, {"$inc": {"media_count": 1}})
+    
+    return media.model_dump()
+
+@api_router.get("/pins/{pin_id}/media")
+async def get_media(pin_id: str, current_user: dict = Depends(get_current_user)):
+    media_list = await db.media.find({"pin_id": pin_id}, {"_id": 0}).to_list(1000)
+    
+    # Convert GridFS files to base64
+    result = []
+    for media in media_list:
+        try:
+            grid_out = await fs.open_download_stream(ObjectId(media['file_id']))
+            content = await grid_out.read()
+            base64_data = base64.b64encode(content).decode('utf-8')
+            media['file_data'] = f"data:{grid_out.metadata.get('content_type', 'image/jpeg')};base64,{base64_data}"
+            result.append(media)
+        except Exception as e:
+            logging.error(f"Error reading media: {e}")
+            continue
+    
+    return result
+
+@api_router.delete("/media/{media_id}")
+async def delete_media(media_id: str, current_user: dict = Depends(get_current_user)):
+    media = await db.media.find_one({"id": media_id}, {"_id": 0})
+    if not media:
+        raise HTTPException(status_code=404, detail="Media not found")
+    if media['user_id'] != current_user['id']:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    # Delete from GridFS
+    try:
+        await fs.delete(ObjectId(media['file_id']))
+    except:
+        pass
+    
+    await db.media.delete_one({"id": media_id})
+    
+    # Update pin media count
+    await db.pins.update_one({"id": media['pin_id']}, {"$inc": {"media_count": -1}})
+    
+    return {"message": "Media deleted"}
+
+# ===== Friend Routes =====
+@api_router.post("/friends/request/{user_id}")
+async def send_friend_request(user_id: str, current_user: dict = Depends(get_current_user)):
+    if user_id == current_user['id']:
+        raise HTTPException(status_code=400, detail="Cannot add yourself")
+    
+    target_user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Check if already friends
+    if user_id in current_user.get('friends', []):
+        raise HTTPException(status_code=400, detail="Already friends")
+    
+    # Add to friend requests
+    await db.users.update_one(
+        {"id": user_id},
+        {"$addToSet": {"friend_requests": current_user['id']}}
+    )
+    
+    return {"message": "Friend request sent"}
+
+@api_router.post("/friends/accept/{user_id}")
+async def accept_friend_request(user_id: str, current_user: dict = Depends(get_current_user)):
+    # Check if request exists
+    if user_id not in current_user.get('friend_requests', []):
+        raise HTTPException(status_code=400, detail="No friend request found")
+    
+    # Add to both friends lists
+    await db.users.update_one(
+        {"id": current_user['id']},
+        {
+            "$addToSet": {"friends": user_id},
+            "$pull": {"friend_requests": user_id}
+        }
+    )
+    await db.users.update_one(
+        {"id": user_id},
+        {"$addToSet": {"friends": current_user['id']}}
+    )
+    
+    return {"message": "Friend request accepted"}
+
+@api_router.get("/friends")
+async def get_friends(current_user: dict = Depends(get_current_user)):
+    friend_ids = current_user.get('friends', [])
+    friends = await db.users.find({"id": {"$in": friend_ids}}, {"_id": 0, "password_hash": 0}).to_list(1000)
+    return friends
+
+@api_router.get("/friends/requests")
+async def get_friend_requests(current_user: dict = Depends(get_current_user)):
+    request_ids = current_user.get('friend_requests', [])
+    requests = await db.users.find({"id": {"$in": request_ids}}, {"_id": 0, "password_hash": 0}).to_list(1000)
+    return requests
+
+# ===== User Search =====
+@api_router.get("/users/search")
+async def search_users(q: str, current_user: dict = Depends(get_current_user)):
+    users = await db.users.find(
+        {
+            "$or": [
+                {"username": {"$regex": q, "$options": "i"}},
+                {"email": {"$regex": q, "$options": "i"}}
+            ],
+            "id": {"$ne": current_user['id']}
+        },
+        {"_id": 0, "password_hash": 0}
+    ).limit(20).to_list(20)
+    return users
+
+# ===== Discovery Routes =====
+@api_router.get("/discover/trending")
+async def get_trending(current_user: dict = Depends(get_current_user)):
+    # Get public pins sorted by likes
+    pipeline = [
+        {"$match": {"privacy": "public"}},
+        {"$addFields": {"like_count": {"$size": "$likes"}}},
+        {"$sort": {"like_count": -1, "created_at": -1}},
+        {"$limit": 50},
+        {"$project": {"_id": 0}}
+    ]
+    trending = await db.pins.aggregate(pipeline).to_list(50)
+    return trending
+
+@api_router.get("/discover/nearby")
+async def get_nearby(lat: float, lng: float, radius_km: float = 10, current_user: dict = Depends(get_current_user)):
+    # Simple distance calculation (for production, use geospatial queries)
+    all_pins = await db.pins.find({"privacy": "public"}, {"_id": 0}).to_list(1000)
+    
+    nearby = []
+    for pin in all_pins:
+        # Haversine formula approximation
+        lat_diff = abs(pin['latitude'] - lat)
+        lng_diff = abs(pin['longitude'] - lng)
+        distance = ((lat_diff ** 2 + lng_diff ** 2) ** 0.5) * 111  # rough km
+        if distance <= radius_km:
+            pin['distance'] = round(distance, 2)
+            nearby.append(pin)
+    
+    nearby.sort(key=lambda x: x['distance'])
+    return nearby[:50]
+
+# Include router
 app.include_router(api_router)
 
 app.add_middleware(
@@ -77,7 +451,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
