@@ -89,6 +89,28 @@ class Media(BaseModel):
     caption: Optional[str] = None
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
+class Event(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    username: str
+    title: str
+    description: str
+    event_date: str
+    latitude: float
+    longitude: float
+    location_name: str
+    attendees: List[str] = Field(default_factory=list)  # user IDs
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+class EventCreate(BaseModel):
+    title: str
+    description: str
+    event_date: str
+    latitude: float
+    longitude: float
+    location_name: str
+
 # ===== Auth Helpers =====
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
@@ -180,6 +202,19 @@ async def get_pins(privacy: Optional[str] = None, current_user: dict = Depends(g
         }
     
     pins = await db.pins.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return pins
+
+@api_router.get("/pins/search")
+async def search_pins(q: str, current_user: dict = Depends(get_current_user)):
+    """Search pins by title or description"""
+    query = {
+        "privacy": "public",
+        "$or": [
+            {"title": {"$regex": q, "$options": "i"}},
+            {"description": {"$regex": q, "$options": "i"}}
+        ]
+    }
+    pins = await db.pins.find(query, {"_id": 0}).sort("created_at", -1).limit(50).to_list(50)
     return pins
 
 @api_router.get("/pins/{pin_id}")
@@ -406,6 +441,50 @@ async def search_users(q: str, current_user: dict = Depends(get_current_user)):
         {"_id": 0, "password_hash": 0}
     ).limit(20).to_list(20)
     return users
+
+# ===== Event Routes =====
+@api_router.post("/events", response_model=Event)
+async def create_event(event_data: EventCreate, current_user: dict = Depends(get_current_user)):
+    event = Event(
+        user_id=current_user['id'],
+        username=current_user['username'],
+        **event_data.model_dump()
+    )
+    await db.events.insert_one(event.model_dump())
+    return event
+
+@api_router.get("/events")
+async def get_events(current_user: dict = Depends(get_current_user)):
+    events = await db.events.find({}, {"_id": 0}).sort("event_date", 1).to_list(1000)
+    return events
+
+@api_router.get("/events/search")
+async def search_events(q: str, current_user: dict = Depends(get_current_user)):
+    """Search events by title, description, or location"""
+    query = {
+        "$or": [
+            {"title": {"$regex": q, "$options": "i"}},
+            {"description": {"$regex": q, "$options": "i"}},
+            {"location_name": {"$regex": q, "$options": "i"}}
+        ]
+    }
+    events = await db.events.find(query, {"_id": 0}).sort("event_date", 1).limit(50).to_list(50)
+    return events
+
+@api_router.post("/events/{event_id}/attend")
+async def attend_event(event_id: str, current_user: dict = Depends(get_current_user)):
+    event = await db.events.find_one({"id": event_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    attendees = event.get('attendees', [])
+    if current_user['id'] in attendees:
+        attendees.remove(current_user['id'])
+    else:
+        attendees.append(current_user['id'])
+    
+    await db.events.update_one({"id": event_id}, {"$set": {"attendees": attendees}})
+    return {"attendees": len(attendees), "attending": current_user['id'] in attendees}
 
 # ===== Discovery Routes =====
 @api_router.get("/discover/trending")
