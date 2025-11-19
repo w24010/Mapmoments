@@ -1,0 +1,103 @@
+{
+  "timestamp": "2025-10-28T01:31:15.814385",
+  "total_tests": 19,
+  "passed_tests": 19,
+  "success_rate": 100.0,
+  "test_details": [
+    {
+      "test": "User Registration",
+      "success": true,
+      "details": "Status: 200"
+    },
+    {
+      "test": "User Login",
+      "success": true,
+      "details": "Status: 200"
+    },
+    {
+      "test": "Get Current User",
+      "success": true,
+      "details": "Status: 200"
+    },
+    {
+      "test": "Create Pin",
+      "success": true,
+      "details": "Status: 200"
+    },
+    {
+      "test": "Get All Pins",
+      "success": true,
+      "details": "Status: 200"
+    },
+    {
+      "test": "Get Specific Pin",
+      "success": true,
+      "details": "Status: 200"
+    },
+    {
+      "test": "Create Private Pin",
+      "success": true,
+      "details": "Status: 200"
+    },
+    {
+      "test": "Like Pin",
+      "success": true,
+      "details": "Status: 200"
+    },
+    {
+      "test": "Unlike Pin",
+      "success": true,
+      "details": "Status: 200"
+    },
+    {
+      "test": "Add Comment",
+      "success": true,
+      "details": "Status: 200"
+    },
+    {
+      "test": "Upload Media",
+      "success": true,
+      "details": "Status: 200"
+    },
+    {
+      "test": "Get Pin Media",
+      "success": true,
+      "details": "Status: 200"
+    },
+    {
+      "test": "Register Friend User",
+      "success": true,
+      "details": "Status: 200"
+    },
+    {
+      "test": "Search Users",
+      "success": true,
+      "details": "Status: 200"
+    },
+    {
+      "test": "Send Friend Request",
+      "success": true,
+      "details": "Status: 200"
+    },
+    {
+      "test": "Get Friends List",
+      "success": true,
+      "details": "Status: 200"
+    },
+    {
+      "test": "Get Friend Requests",
+      "success": true,
+      "details": "Status: 200"
+    },
+    {
+      "test": "Get Trending Pins",
+      "success": true,
+      "details": "Status: 200"
+    },
+    {
+      "test": "Get Nearby Pins",
+      "success": true,
+      "details": "Status: 200"
+    }
+  ]
+}
