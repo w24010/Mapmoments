@@ -148,16 +148,9 @@ const MapView = ({ token, logout, user, setUser }) => {
     }
   };
 
-  const handlePinClick = async (pin) => {
+  const handlePinClick = (pin) => {
     setSelectedPin(pin);
-    try {
-      const response = await axios.get(`${API}/pins/${pin.id}/media`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setPinMedia(response.data);
-    } catch (error) {
-      console.error("Failed to load media:", error);
-    }
+    setPinMedia(pin.media || []);
   };
 
   const handleLike = async (pinId) => {
@@ -244,17 +237,17 @@ const MapView = ({ token, logout, user, setUser }) => {
         )}
 
         {selectedPin && (
-          <Popup
-            longitude={selectedPin.longitude}
-            latitude={selectedPin.latitude}
-            anchor="top"
-            onClose={() => {
-              setSelectedPin(null);
-              setPinMedia([]);
-            }}
-            className="custom-popup"
-          >
-            <div className="p-4 min-w-[300px] max-w-[400px]">
+            <Popup
+              longitude={selectedPin.longitude}
+              latitude={selectedPin.latitude}
+              anchor="top"
+              onClose={() => {
+                setSelectedPin(null);
+                setPinMedia([]);
+              }}
+              className="custom-popup"
+            >
+              <div className="p-4 min-w-[360px] max-w-[520px] max-h-[400px] overflow-auto">
               <h3 className="text-xl font-bold text-slate-800 mb-2">
                 {selectedPin.title}
               </h3>
@@ -263,33 +256,45 @@ const MapView = ({ token, logout, user, setUser }) => {
               </p>
               <p className="text-slate-700 mb-4">{selectedPin.description}</p>
 
-              {pinMedia.length > 0 && (
-                <div className="grid grid-cols-2 gap-2 mb-4">
-                  {pinMedia.map((media) => (
-                    <div key={media.id} className="rounded-lg overflow-hidden">
-                      {media.media_type === "photo" ? (
-                        <img
-                          src={media.file_data}
-                          alt={media.caption || "Pin media"}
-                          className="w-full h-32 object-cover"
-                        />
-                      ) : (
-                        <video
-                          src={media.file_data}
-                          className="w-full h-32 object-cover"
-                          controls
-                        />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
+{selectedPin?.media?.length > 0 && (
+  <div className="grid grid-cols-3 gap-2 mb-4">
+    {selectedPin.media.map((media) => {
+      let src = media.file_data;
+      // Ensure src is a full data url, prepend if needed
+      if (!src.startsWith("data:")) {
+        if (media.media_type === "photo") {
+          src = `data:image/jpeg;base64,${src}`;
+        } else if (media.media_type === "video") {
+          src = `data:video/mp4;base64,${src}`;
+        }
+      }
+      return (
+        <div key={media.id} className="rounded-lg overflow-hidden max-h-40">
+          {media.media_type === "photo" ? (
+            <img
+              src={src}
+              alt={media.caption || "Pin media"}
+              className="w-full h-40 object-cover"
+            />
+          ) : (
+            <video
+              src={src}
+              className="w-full h-40 object-cover"
+              controls
+            />
+          )}
+        </div>
+      );
+    })}
+  </div>
+)}
 
-              <div className="flex items-center gap-4 text-slate-600">
-                <button
-                  onClick={() => handleLike(selectedPin.id)}
-                  className="flex items-center gap-1 hover:text-red-500"
-                >
+              <div className="flex flex-col gap-3 text-slate-600">
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={() => handleLike(selectedPin.id)}
+                    className="flex items-center gap-1 hover:text-red-500"
+                  >
                   <Heart
                     className={`w-5 h-5 ${
                       selectedPin.likes?.includes(user?.id)
@@ -297,12 +302,32 @@ const MapView = ({ token, logout, user, setUser }) => {
                         : ""
                     }`}
                   />
-                  <span>{selectedPin.likes?.length || 0}</span>
-                </button>
-                <div className="flex items-center gap-1">
-                  <MessageCircle className="w-5 h-5" />
-                  <span>{selectedPin.comments?.length || 0}</span>
+                    <span>{selectedPin.likes?.length || 0}</span>
+                  </button>
+                  <div className="flex items-center gap-1">
+                    <MessageCircle className="w-5 h-5" />
+                    <span>{selectedPin.comments?.length || 0}</span>
+                  </div>
                 </div>
+                {selectedPin.user_id === user?.id && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await axios.delete(`${API}/pins/${selectedPin.id}`, {
+                          headers: { Authorization: `Bearer ${token}` },
+                        });
+                        toast.success("Pin deleted successfully");
+                        setSelectedPin(null);
+                        fetchPins();
+                      } catch (error) {
+                        toast.error("Failed to delete pin");
+                      }
+                    }}
+                    className="text-sm text-red-600 hover:underline"
+                  >
+                    Delete Pin
+                  </button>
+                )}
               </div>
             </div>
           </Popup>

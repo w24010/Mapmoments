@@ -249,22 +249,80 @@ async def create_pin(pin_data: PinCreate, current_user: dict = Depends(get_curre
 @api_router.get("/pins")
 async def get_pins(privacy: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     query = {}
-    
+
+    is_guest = current_user.get('is_guest', False)
+
     if privacy:
         query['privacy'] = privacy
     else:
-        # Get public pins and user's own pins and friends' pins
         friends = current_user.get('friends', [])
-        query = {
-            "$or": [
-                {"privacy": "public"},
-                {"user_id": current_user['id']},
-                {"$and": [{"privacy": "friends"}, {"user_id": {"$in": friends}}]}
-            ]
-        }
-    
+
+        if is_guest:
+            # Guest users see only their private pins to avoid sharing with others
+            query = {
+                "user_id": current_user['id']
+            }
+        else:
+            # Authenticated users see public pins, their own pins, and friends' pins
+            query = {
+                "$or": [
+                    {"privacy": "public", "user_id": {"$ne": current_user['id']}},
+                    {"user_id": current_user['id']},
+                    {"$and": [{"privacy": "friends"}, {"user_id": {"$in": friends}}]}
+                ]
+            }
+
     pins = await db.pins.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+
+    # Embed media for each pin
+    for pin in pins:
+        media_items = await db.media.find({"pin_id": pin["id"]}, {"_id": 0}).to_list(100)
+        result_media = []
+        for media in media_items:
+            try:
+                grid_out = await fs.open_download_stream(ObjectId(media["file_id"]))
+                content = await grid_out.read()
+                # motor returns bytes, no need to await again on 'content'
+                base64_data = base64.b64encode(content).decode("utf-8")
+                ct = (grid_out.metadata or {}).get("content_type", "image/jpeg")
+                media["file_data"] = f"data:{ct};base64,{base64_data}"
+                result_media.append(media)
+            except Exception as e:
+                logging.error(f"Error embedding media for pin {pin['id']}: {e}")
+                continue
+        pin["media"] = result_media
+
     return pins
+
+@api_router.get("/users/{user_id}/pins")
+async def get_user_pins(user_id: str, current_user: dict = Depends(get_current_user)):
+    # List pins created by a specific user
+    if user_id != current_user['id']:
+        # Optionally add friend or public check to allow viewing others' pins
+        raise HTTPException(status_code=403, detail="Not authorized to view pins of other users")
+    pins = await db.pins.find({"user_id": user_id}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return pins
+
+@api_router.delete("/pins/{pin_id}")
+async def delete_pin(pin_id: str, current_user: dict = Depends(get_current_user)):
+    pin = await db.pins.find_one({"id": pin_id}, {"_id": 0})
+    if not pin:
+        raise HTTPException(status_code=404, detail="Pin not found")
+    if pin['user_id'] != current_user['id']:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this pin")
+    
+    # Delete associated media
+    media_items = await db.media.find({"pin_id": pin_id}, {"_id": 0}).to_list(1000)
+    for media in media_items:
+        try:
+            await fs.delete(ObjectId(media['file_id']))
+        except Exception as e:
+            logging.error(f"Failed to delete media file: {e}")
+            pass
+    await db.media.delete_many({"pin_id": pin_id})
+    
+    await db.pins.delete_one({"id": pin_id})
+    return {"message": "Pin and its media deleted"}
 
 @api_router.get("/pins/search")
 async def search_pins(q: str, current_user: dict = Depends(get_current_user)):
@@ -397,21 +455,34 @@ async def upload_media(
 @api_router.get("/pins/{pin_id}/media")
 async def get_media(pin_id: str, current_user: dict = Depends(get_current_user)):
     media_list = await db.media.find({"pin_id": pin_id}, {"_id": 0}).to_list(1000)
-    
+
     # Convert GridFS files to base64
     result = []
-    for media in media_list:
+    for i, media in enumerate(media_list):
         try:
             grid_out = await fs.open_download_stream(ObjectId(media['file_id']))
-            content = grid_out.read()
+            content = await grid_out.read()  # Await the asynchronous read
+            # If content is a coroutine (future), await it
+            if hasattr(content, '__await__'):
+                content = await content
+            if not isinstance(content, (bytes, bytearray)):
+                logging.error(f"Media content is not bytes for media id {media['id']}")
+                continue
             base64_data = base64.b64encode(content).decode('utf-8')
             content_type = (grid_out.metadata or {}).get('content_type', 'image/jpeg')
             media['file_data'] = f"data:{content_type};base64,{base64_data}"
             result.append(media)
+            if i == 0 and base64_data:
+                logging.info(f"Sample base64 for media id {media['id']}: {base64_data[:30]}...")
+                logging.info(f"Content type: {content_type}")
         except Exception as e:
             logging.error(f"Error reading media: {e}")
             continue
-    
+
+    logging.info(f"Fetched {len(result)} media items for pin {pin_id}")
+    for m in result:
+        logging.info(f"Media id {m['id']} has file_data length {len(m['file_data'])}")
+
     return result
 
 @api_router.delete("/media/{media_id}")
