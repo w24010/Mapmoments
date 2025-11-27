@@ -90,6 +90,7 @@ const MapView = ({ token, logout, user, setUser }) => {
     try {
       const response = await axios.get(`${API}/pins`, {
         headers: { Authorization: `Bearer ${token}` },
+        params: { userId: user?.id }
       });
       setPins(response.data);
     } catch (error) {
@@ -148,9 +149,39 @@ const MapView = ({ token, logout, user, setUser }) => {
     }
   };
 
+  const [commentText, setCommentText] = useState("");  
+  const [commentLoading, setCommentLoading] = useState(false);
+
   const handlePinClick = (pin) => {
     setSelectedPin(pin);
     setPinMedia(pin.media || []);
+    setCommentText("");
+  };
+
+  const handleAddComment = async () => {
+    if (!commentText.trim()) {
+      toast.error("Comment cannot be empty");
+      return;
+    }
+    setCommentLoading(true);
+    try {
+      const response = await axios.post(
+        `${API}/pins/${selectedPin.id}/comments`,
+        { text: commentText.trim() },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      // Add new comment to selected pin's comments
+      setSelectedPin((prev) => ({
+        ...prev,
+        comments: [...(prev.comments || []), response.data],
+      }));
+      setCommentText("");
+      toast.success("Comment added successfully");
+    } catch (error) {
+      toast.error("Failed to add comment");
+    } finally {
+      setCommentLoading(false);
+    }
   };
 
   const handleLike = async (pinId) => {
@@ -237,17 +268,18 @@ const MapView = ({ token, logout, user, setUser }) => {
         )}
 
         {selectedPin && (
-            <Popup
-              longitude={selectedPin.longitude}
-              latitude={selectedPin.latitude}
-              anchor="top"
-              onClose={() => {
-                setSelectedPin(null);
-                setPinMedia([]);
-              }}
-              className="custom-popup"
-            >
-              <div className="p-4 min-w-[360px] max-w-[520px] max-h-[400px] overflow-auto">
+          <Popup
+            longitude={selectedPin.longitude}
+            latitude={selectedPin.latitude}
+            anchor="top"
+            onClose={() => {
+              setSelectedPin(null);
+              setPinMedia([]);
+            }}
+            className="custom-popup flex items-center justify-center"
+            offset={[0, -100]}
+          >
+            <div className="p-4 min-w-[360px] max-w-[520px] max-h-[400px] overflow-auto flex flex-col gap-4">
               <h3 className="text-xl font-bold text-slate-800 mb-2">
                 {selectedPin.title}
               </h3>
@@ -256,38 +288,41 @@ const MapView = ({ token, logout, user, setUser }) => {
               </p>
               <p className="text-slate-700 mb-4">{selectedPin.description}</p>
 
-{selectedPin?.media?.length > 0 && (
-  <div className="grid grid-cols-3 gap-2 mb-4">
-    {selectedPin.media.map((media) => {
-      let src = media.file_data;
-      // Ensure src is a full data url, prepend if needed
-      if (!src.startsWith("data:")) {
-        if (media.media_type === "photo") {
-          src = `data:image/jpeg;base64,${src}`;
-        } else if (media.media_type === "video") {
-          src = `data:video/mp4;base64,${src}`;
-        }
-      }
-      return (
-        <div key={media.id} className="rounded-lg overflow-hidden max-h-40">
-          {media.media_type === "photo" ? (
-            <img
-              src={src}
-              alt={media.caption || "Pin media"}
-              className="w-full h-40 object-cover"
-            />
-          ) : (
-            <video
-              src={src}
-              className="w-full h-40 object-cover"
-              controls
-            />
-          )}
-        </div>
-      );
-    })}
-  </div>
-)}
+              {selectedPin?.media?.length > 0 && (
+                <div className="grid grid-cols-3 gap-2 mb-4">
+                  {selectedPin.media.map((media) => {
+                    let src = media.file_data;
+                    // Ensure src is a full data url, prepend if needed
+                    if (!src.startsWith("data:")) {
+                      if (media.media_type === "photo") {
+                        src = `data:image/jpeg;base64,${src}`;
+                      } else if (media.media_type === "video") {
+                        src = `data:video/mp4;base64,${src}`;
+                      }
+                    }
+                    return (
+                      <div
+                        key={media.id}
+                        className="rounded-lg overflow-hidden max-h-40"
+                      >
+                        {media.media_type === "photo" ? (
+                          <img
+                            src={src}
+                            alt={media.caption || "Pin media"}
+                            className="w-full h-40 object-cover"
+                          />
+                        ) : (
+                          <video
+                            src={src}
+                            className="w-full h-40 object-cover"
+                            controls
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               <div className="flex flex-col gap-3 text-slate-600">
                 <div className="flex items-center gap-4">
@@ -295,13 +330,13 @@ const MapView = ({ token, logout, user, setUser }) => {
                     onClick={() => handleLike(selectedPin.id)}
                     className="flex items-center gap-1 hover:text-red-500"
                   >
-                  <Heart
-                    className={`w-5 h-5 ${
-                      selectedPin.likes?.includes(user?.id)
-                        ? "fill-red-500 text-red-500"
-                        : ""
-                    }`}
-                  />
+                    <Heart
+                      className={`w-5 h-5 ${
+                        selectedPin.likes?.includes(user?.id)
+                          ? "fill-red-500 text-red-500"
+                          : ""
+                      }`}
+                    />
                     <span>{selectedPin.likes?.length || 0}</span>
                   </button>
                   <div className="flex items-center gap-1">
@@ -309,6 +344,51 @@ const MapView = ({ token, logout, user, setUser }) => {
                     <span>{selectedPin.comments?.length || 0}</span>
                   </div>
                 </div>
+
+                {/* Display Comments */}
+                {selectedPin.comments && selectedPin.comments.length > 0 && (
+                  <div className="mt-4">
+                    <Label className="text-sm font-semibold">Comments</Label>
+                    <div className="space-y-2 mt-2 max-h-32 overflow-y-auto">
+                      {selectedPin.comments.map((comment) => (
+                        <div key={comment.id} className="bg-white/50 rounded-lg p-2 text-sm">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <span className="font-medium text-slate-800">@{comment.username}</span>
+                              <p className="text-slate-700 mt-1">{comment.text}</p>
+                              <span className="text-xs text-slate-500">
+                                {new Date(comment.created_at).toLocaleDateString()}
+                              </span>
+                            </div>
+                            {selectedPin.user_id === user?.id && (
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    // Note: Backend needs endpoint to delete comment by ID
+                                    await axios.delete(`${API}/pins/${selectedPin.id}/comments/${comment.id}`, {
+                                      headers: { Authorization: `Bearer ${token}` },
+                                    });
+                                    setSelectedPin((prev) => ({
+                                      ...prev,
+                                      comments: prev.comments.filter(c => c.id !== comment.id),
+                                    }));
+                                    toast.success("Comment deleted");
+                                  } catch (error) {
+                                    toast.error("Failed to delete comment");
+                                  }
+                                }}
+                                className="text-xs text-red-500 hover:underline ml-2"
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {selectedPin.user_id === user?.id && (
                   <button
                     onClick={async () => {
@@ -328,6 +408,26 @@ const MapView = ({ token, logout, user, setUser }) => {
                     Delete Pin
                   </button>
                 )}
+
+                {/* Add comment form */}
+                <div className="mt-4 w-full">
+                  <Label htmlFor="comment">Add a Comment</Label>
+                  <Textarea
+                    id="comment"
+                    rows={3}
+                    value={commentText}
+                    onChange={(e) => setCommentText(e.target.value)}
+                    className="glass border-white/30 resize-none"
+                    placeholder="Write your comment here..."
+                  />
+                  <Button
+                    onClick={handleAddComment}
+                    disabled={commentLoading}
+                    className="mt-2 w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white"
+                  >
+                    {commentLoading ? "Adding..." : "Add Comment"}
+                  </Button>
+                </div>
               </div>
             </div>
           </Popup>

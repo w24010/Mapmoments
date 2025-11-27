@@ -92,7 +92,7 @@ class PinCreate(BaseModel):
     description: str
     latitude: float
     longitude: float
-    privacy: str = "public"
+    privacy: str = "private"
 
 class Comment(BaseModel):
     text: str
@@ -128,6 +128,22 @@ class EventCreate(BaseModel):
     latitude: float
     longitude: float
     location_name: str
+
+# ===== Message Models =====
+class MessageCreate(BaseModel):
+    recipient_id: str
+    content: str
+
+class Message(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    sender_id: str
+    sender_username: str
+    recipient_id: str
+    recipient_username: str
+    content: str
+    read: bool = False
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 # ===== Auth Helpers =====
 def hash_password(password: str) -> str:
@@ -238,6 +254,7 @@ async def get_me(current_user: dict = Depends(get_current_user)):
 # ===== Pin Routes =====
 @api_router.post("/pins", response_model=Pin)
 async def create_pin(pin_data: PinCreate, current_user: dict = Depends(get_current_user)):
+    # Fix A — add userId to pin document stored in MongoDB
     pin = Pin(
         user_id=current_user['id'],
         username=current_user['username'],
@@ -394,7 +411,7 @@ async def add_comment(pin_id: str, comment: Comment, current_user: dict = Depend
     pin = await db.pins.find_one({"id": pin_id}, {"_id": 0})
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
-    
+
     new_comment = {
         "id": str(uuid.uuid4()),
         "user_id": current_user['id'],
@@ -402,9 +419,25 @@ async def add_comment(pin_id: str, comment: Comment, current_user: dict = Depend
         "text": comment.text,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
-    
+
     await db.pins.update_one({"id": pin_id}, {"$push": {"comments": new_comment}})
     return new_comment
+
+@api_router.delete("/pins/{pin_id}/comments/{comment_id}")
+async def delete_comment(pin_id: str, comment_id: str, current_user: dict = Depends(get_current_user)):
+    pin = await db.pins.find_one({"id": pin_id}, {"_id": 0})
+    if not pin:
+        raise HTTPException(status_code=404, detail="Pin not found")
+
+    if pin['user_id'] != current_user['id']:
+        raise HTTPException(status_code=403, detail="Not authorized to delete comments on this pin")
+
+    # Remove the comment from the comments array
+    await db.pins.update_one(
+        {"id": pin_id},
+        {"$pull": {"comments": {"id": comment_id}}}
+    )
+    return {"message": "Comment deleted"}
 
 # ===== Media Routes =====
 @api_router.post("/pins/{pin_id}/media")
@@ -575,6 +608,126 @@ async def search_users(q: str, current_user: dict = Depends(get_current_user)):
         {"_id": 0, "password_hash": 0}
     ).limit(20).to_list(20)
     return users
+
+# ===== Profile Picture Routes =====
+@api_router.post("/users/profile-picture")
+async def upload_profile_picture(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    # Determine media type
+    content_type = file.content_type or ""
+    if not content_type.startswith('image/'):
+        raise HTTPException(status_code=400, detail="Invalid file type. Only images allowed.")
+
+    # Upload to GridFS
+    file_content = await file.read()
+    file_id = await fs.upload_from_stream(
+        file.filename or "profile_picture",
+        file_content,
+        metadata={"content_type": content_type}
+    )
+
+    # Update user profile
+    await db.users.update_one(
+        {"id": current_user['id']},
+        {"$set": {"profile_photo": str(file_id)}}
+    )
+
+    return {"message": "Profile picture updated", "file_id": str(file_id)}
+
+@api_router.get("/users/{user_id}/profile-picture")
+async def get_profile_picture(user_id: str):
+    user = await db.users.find_one({"id": user_id}, {"_id": 0, "profile_photo": 1})
+    if not user or not user.get('profile_photo'):
+        raise HTTPException(status_code=404, detail="Profile picture not found")
+
+    try:
+        grid_out = await fs.open_download_stream(ObjectId(user['profile_photo']))
+        content = await grid_out.read()
+        base64_data = base64.b64encode(content).decode("utf-8")
+        ct = (grid_out.metadata or {}).get("content_type", "image/jpeg")
+        return {"file_data": f"data:{ct};base64,{base64_data}"}
+    except Exception as e:
+        logging.error(f"Error retrieving profile picture: {e}")
+        raise HTTPException(status_code=500, detail="Error retrieving profile picture")
+
+# ===== Message Routes =====
+@api_router.post("/messages")
+async def send_message(message_data: MessageCreate, current_user: dict = Depends(get_current_user)):
+    # Check if recipient is a friend
+    if message_data.recipient_id not in current_user.get('friends', []):
+        raise HTTPException(status_code=403, detail="Can only message friends")
+
+    # Get recipient info
+    recipient = await db.users.find_one({"id": message_data.recipient_id}, {"_id": 0, "username": 1})
+    if not recipient:
+        raise HTTPException(status_code=404, detail="Recipient not found")
+
+    message = Message(
+        sender_id=current_user['id'],
+        sender_username=current_user['username'],
+        recipient_id=message_data.recipient_id,
+        recipient_username=recipient['username'],
+        content=message_data.content
+    )
+
+    await db.messages.insert_one(message.model_dump())
+    return message
+
+@api_router.get("/messages/{friend_id}")
+async def get_messages(friend_id: str, current_user: dict = Depends(get_current_user)):
+    # Check if friend_id is actually a friend
+    if friend_id not in current_user.get('friends', []):
+        raise HTTPException(status_code=403, detail="Can only view messages with friends")
+
+    # Get messages between current user and friend
+    messages = await db.messages.find(
+        {
+            "$or": [
+                {"sender_id": current_user['id'], "recipient_id": friend_id},
+                {"sender_id": friend_id, "recipient_id": current_user['id']}
+            ]
+        },
+        {"_id": 0}
+    ).sort("created_at", 1).to_list(1000)
+
+    return messages
+
+@api_router.get("/messages")
+async def get_conversations(current_user: dict = Depends(get_current_user)):
+    # Get all conversations (latest message from each friend)
+    pipeline = [
+        {
+            "$match": {
+                "$or": [
+                    {"sender_id": current_user['id']},
+                    {"recipient_id": current_user['id']}
+                ]
+            }
+        },
+        {
+            "$sort": {"created_at": -1}
+        },
+        {
+            "$group": {
+                "_id": {
+                    "$cond": {
+                        "if": {"$eq": ["$sender_id", current_user['id']]},
+                        "then": "$recipient_id",
+                        "else": "$sender_id"
+                    }
+                },
+                "latest_message": {"$first": "$$ROOT"}
+            }
+        },
+        {
+            "$replaceRoot": {"newRoot": "$latest_message"}
+        }
+    ]
+
+    conversations = await db.messages.aggregate(pipeline).to_list(100)
+    return conversations
 
 # ===== Event Routes =====
 @api_router.post("/events", response_model=Event)

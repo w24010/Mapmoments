@@ -3,7 +3,7 @@ import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { MapPin, ArrowLeft, Users, Heart, Search, UserPlus, Check, X } from 'lucide-react';
+import { MapPin, ArrowLeft, Users, Heart, Search, UserPlus, Check, X, Camera, MessageCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 
@@ -19,10 +19,17 @@ const Profile = ({ token, logout, user }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [activeTab, setActiveTab] = useState('pins');
+  const [profilePicture, setProfilePicture] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [selectedFriend, setSelectedFriend] = useState(null);
+  const [messageText, setMessageText] = useState('');
 
   useEffect(() => {
     fetchUserData();
-  }, []);
+    if (currentUser) {
+      fetchProfilePicture();
+    }
+  }, [currentUser]);
 
   const fetchUserData = async () => {
     try {
@@ -40,6 +47,68 @@ const Profile = ({ token, logout, user }) => {
       setFriendRequests(requestsRes.data);
     } catch (error) {
       console.error('Failed to fetch user data:', error);
+    }
+  };
+
+  const fetchProfilePicture = async () => {
+    try {
+      const response = await axios.get(`${API}/users/${currentUser?.id}/profile-picture`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setProfilePicture(response.data.file_data);
+    } catch (error) {
+      // Profile picture not found, use default
+      setProfilePicture(null);
+    }
+  };
+
+  const handleProfilePictureUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      await axios.post(`${API}/users/profile-picture`, formData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      toast.success('Profile picture updated!');
+      fetchProfilePicture();
+    } catch (error) {
+      toast.error('Failed to upload profile picture');
+    }
+  };
+
+  const fetchMessages = async (friendId) => {
+    try {
+      const response = await axios.get(`${API}/messages/${friendId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setMessages(response.data);
+    } catch (error) {
+      console.error('Failed to fetch messages:', error);
+    }
+  };
+
+  const sendMessage = async () => {
+    if (!messageText.trim() || !selectedFriend) return;
+
+    try {
+      await axios.post(`${API}/messages`, {
+        recipient_id: selectedFriend.id,
+        content: messageText.trim(),
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setMessageText('');
+      fetchMessages(selectedFriend.id);
+      toast.success('Message sent!');
+    } catch (error) {
+      toast.error('Failed to send message');
     }
   };
 
@@ -104,8 +173,27 @@ const Profile = ({ token, logout, user }) => {
         {currentUser && (
           <Card data-testid="user-info-card" className="glass border-white/20 p-8 mb-8 shadow-xl">
             <div className="flex items-center gap-6">
-              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white text-3xl font-bold shadow-lg">
-                {currentUser.username.charAt(0).toUpperCase()}
+              <div className="relative">
+                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white text-3xl font-bold shadow-lg overflow-hidden">
+                  {profilePicture ? (
+                    <img
+                      src={profilePicture}
+                      alt="Profile"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    currentUser.username.charAt(0).toUpperCase()
+                  )}
+                </div>
+                <label className="absolute bottom-0 right-0 bg-blue-500 hover:bg-blue-600 text-white p-2 rounded-full cursor-pointer shadow-lg">
+                  <Camera className="w-4 h-4" />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleProfilePictureUpload}
+                    className="hidden"
+                  />
+                </label>
               </div>
               <div className="flex-1">
                 <h2 className="text-3xl font-bold text-slate-800 mb-2">{currentUser.username}</h2>
@@ -162,6 +250,16 @@ const Profile = ({ token, logout, user }) => {
                 {friendRequests.length}
               </span>
             )}
+          </Button>
+          <Button
+            onClick={() => setActiveTab('messages')}
+            className={`glass rounded-xl px-6 py-3 ${
+              activeTab === 'messages' ? 'bg-white/50' : ''
+            }`}
+            variant="ghost"
+          >
+            <MessageCircle className="w-5 h-5 mr-2" />
+            Messages
           </Button>
         </div>
 
@@ -294,6 +392,98 @@ const Profile = ({ token, logout, user }) => {
                 </div>
               )}
             </Card>
+          </div>
+        )}
+
+        {activeTab === 'messages' && (
+          <div className="space-y-6">
+            {!selectedFriend ? (
+              <Card className="glass border-white/20 p-6">
+                <h3 className="text-xl font-bold text-slate-800 mb-4">Messages</h3>
+                <p className="text-slate-600 mb-4">Select a friend to start messaging</p>
+                {friends.length === 0 ? (
+                  <p className="text-slate-600">No friends yet. Add some friends first!</p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {friends.map((friend) => (
+                      <div
+                        key={friend.id}
+                        onClick={() => {
+                          setSelectedFriend(friend);
+                          fetchMessages(friend.id);
+                        }}
+                        className="flex items-center gap-3 p-3 bg-white/30 rounded-xl cursor-pointer hover:bg-white/50 transition-colors"
+                      >
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white font-bold">
+                          {friend.username.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-slate-800">{friend.username}</p>
+                          <p className="text-sm text-slate-600">Click to message</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            ) : (
+              <Card className="glass border-white/20 p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <Button
+                    onClick={() => setSelectedFriend(null)}
+                    variant="ghost"
+                    size="sm"
+                  >
+                    ← Back
+                  </Button>
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white font-bold">
+                    {selectedFriend.username.charAt(0).toUpperCase()}
+                  </div>
+                  <h3 className="text-xl font-bold text-slate-800">{selectedFriend.username}</h3>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="h-64 overflow-y-auto border rounded-lg p-4 bg-white/30">
+                    {messages.length === 0 ? (
+                      <p className="text-slate-600 text-center">No messages yet. Start the conversation!</p>
+                    ) : (
+                      messages.map((message) => (
+                        <div
+                          key={message.id}
+                          className={`mb-3 p-3 rounded-lg ${
+                            message.sender_id === currentUser?.id
+                              ? 'bg-blue-100 ml-12'
+                              : 'bg-gray-100 mr-12'
+                          }`}
+                        >
+                          <p className="text-sm text-slate-800">{message.content}</p>
+                          <span className="text-xs text-slate-500">
+                            {new Date(message.created_at).toLocaleString()}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Input
+                      value={messageText}
+                      onChange={(e) => setMessageText(e.target.value)}
+                      placeholder="Type your message..."
+                      onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                      className="glass border-white/30"
+                    />
+                    <Button
+                      onClick={sendMessage}
+                      disabled={!messageText.trim()}
+                      className="bg-blue-500 hover:bg-blue-600 text-white"
+                    >
+                      Send
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            )}
           </div>
         )}
       </div>
