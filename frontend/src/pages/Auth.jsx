@@ -2,12 +2,6 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-<<<<<<< HEAD
-
-// Configure axios to send credentials
-// axios.defaults.withCredentials = true; // Temporarily disabled for testing
-=======
->>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { MapPin } from 'lucide-react';
@@ -35,46 +29,12 @@ const Auth = ({ setToken, setUser }) => {
         ? { email: formData.email, password: formData.password }
         : formData;
 
-<<<<<<< HEAD
-      console.log('Sending request to:', endpoint);
-      console.log('Request data:', data);
-      
       const response = await axios.post(endpoint, data);
-      console.log('Response:', response.data);
-      
-=======
-      const response = await axios.post(endpoint, data);
->>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
       setToken(response.data.token);
       setUser(response.data.user);
       toast.success(isLogin ? 'Welcome back!' : 'Account created successfully!');
     } catch (error) {
-<<<<<<< HEAD
-      console.error('Auth error:', error);
-      console.error('Error response:', error.response?.data);
-      toast.error(error.response?.data?.detail || error.message || 'Authentication failed');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleGuestLogin = async () => {
-    setLoading(true);
-    try {
-      console.log('Guest login to:', `${API}/auth/guest`);
-      const response = await axios.post(`${API}/auth/guest`);
-      console.log('Guest response:', response.data);
-      
-      setToken(response.data.token);
-      setUser(response.data.user);
-      toast.success('Welcome, Guest!');
-    } catch (error) {
-      console.error('Guest login error:', error);
-      console.error('Guest error response:', error.response?.data);
-      toast.error(error.response?.data?.detail || error.message || 'Guest login failed');
-=======
       toast.error(error.response?.data?.detail || 'Authentication failed');
->>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
     } finally {
       setLoading(false);
     }
@@ -160,21 +120,6 @@ const Auth = ({ setToken, setUser }) => {
             </Button>
           </form>
 
-<<<<<<< HEAD
-          <div className="mt-4">
-            <Button
-              data-testid="guest-login-button"
-              type="button"
-              onClick={handleGuestLogin}
-              disabled={loading}
-              className="w-full bg-gradient-to-r from-gray-400 to-gray-500 hover:from-gray-500 hover:to-gray-600 text-white font-semibold py-6 rounded-xl shadow-lg"
-            >
-              Continue as Guest
-            </Button>
-          </div>
-
-=======
->>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
           <div className="mt-6 text-center">
             <button
               data-testid="toggle-auth-mode"

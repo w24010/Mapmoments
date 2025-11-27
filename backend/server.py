@@ -1,8 +1,4 @@
-<<<<<<< HEAD
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, File, UploadFile, Form, status, Response, Request
-=======
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, File, UploadFile, Form, status
->>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -29,20 +25,19 @@ db = client[os.environ.get('DB_NAME', 'mapmoments_db')]
 fs = AsyncIOMotorGridFSBucket(db)
 
 # JWT Configuration
-JWT_SECRET = os.environ.get('JWT_SECRET', 'your-secret-key-change-in-production')
+JWT_SECRET = os.environ.get('e4c2a7c0f4b9d8d1a32f1d5a9b7c4e1f3a8d9c6b2f1e4a7c9d3f8b1e2c4a6d9f0b1c2d3e4f5a6c7b8d9e0f1a2b3c4d5e6f7')
 JWT_ALGORITHM = 'HS256'
 JWT_EXPIRATION_HOURS = 168  # 7 days
 
 # Create the main app
 app = FastAPI()
-<<<<<<< HEAD
 
 # CORS must come BEFORE router
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        "https://spotshare-18.preview.emergentagent.com"
+        "https://mapmoments.vercel.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -57,11 +52,6 @@ security = HTTPBearer()
 async def health_check():
     return {"status": "ok", "message": "Backend is running"}
 
-=======
-api_router = APIRouter(prefix="/api")
-security = HTTPBearer()
-
->>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
 # ===== Models =====
 class UserCreate(BaseModel):
     username: str
@@ -102,11 +92,7 @@ class PinCreate(BaseModel):
     description: str
     latitude: float
     longitude: float
-<<<<<<< HEAD
-    privacy: str = "private"
-=======
     privacy: str = "public"
->>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
 
 class Comment(BaseModel):
     text: str
@@ -143,25 +129,6 @@ class EventCreate(BaseModel):
     longitude: float
     location_name: str
 
-<<<<<<< HEAD
-# ===== Message Models =====
-class MessageCreate(BaseModel):
-    recipient_id: str
-    content: str
-
-class Message(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    sender_id: str
-    sender_username: str
-    recipient_id: str
-    recipient_username: str
-    content: str
-    read: bool = False
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-
-=======
->>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
 # ===== Auth Helpers =====
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
@@ -190,16 +157,12 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 
 # ===== Auth Routes =====
 @api_router.post("/auth/register")
-<<<<<<< HEAD
-async def register(user_data: UserCreate, response: Response):
-=======
 async def register(user_data: UserCreate):
->>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
     # Check if user exists
     existing = await db.users.find_one({"$or": [{"email": user_data.email}, {"username": user_data.username}]}, {"_id": 0})
     if existing:
         raise HTTPException(status_code=400, detail="User already exists")
-    
+
     # Create user
     user = User(
         username=user_data.username,
@@ -207,77 +170,21 @@ async def register(user_data: UserCreate):
     )
     user_dict = user.model_dump()
     user_dict['password_hash'] = hash_password(user_data.password)
-    
-    await db.users.insert_one(user_dict)
-    
-    token = create_token(user.id)
-<<<<<<< HEAD
-    response.set_cookie(
-        "token", 
-        token, 
-        httponly=True, 
-        secure=False,
-        samesite="lax",
-        max_age=JWT_EXPIRATION_HOURS * 3600
-    )
-    return {"token": token, "user": {"id": user.id, "username": user.username, "email": user.email}}
 
-@api_router.post("/auth/login")
-async def login(login_data: UserLogin, response: Response):
-=======
+    await db.users.insert_one(user_dict)
+
+    token = create_token(user.id)
     return {"token": token, "user": {"id": user.id, "username": user.username, "email": user.email}}
 
 @api_router.post("/auth/login")
 async def login(login_data: UserLogin):
->>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
     user = await db.users.find_one({"email": login_data.email}, {"_id": 0})
     if not user or not verify_password(login_data.password, user['password_hash']):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
+
     token = create_token(user['id'])
-<<<<<<< HEAD
-    response.set_cookie(
-        "token", 
-        token, 
-        httponly=True, 
-        secure=False,
-        samesite="lax",
-        max_age=JWT_EXPIRATION_HOURS * 3600
-    )
     return {"token": token, "user": {"id": user['id'], "username": user['username'], "email": user['email']}}
 
-@api_router.post("/auth/guest")
-async def guest_login(response: Response):
-    # Create temporary guest user
-    guest_id = str(uuid.uuid4())
-    guest_user = {
-        "id": guest_id,
-        "username": f"Guest_{guest_id[:8]}",
-        "email": f"guest_{guest_id[:8]}@temp.com",
-        "is_guest": True,
-        "friends": [],
-        "friend_requests": [],
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
-    
-    # Store guest user temporarily (no password needed)
-    await db.users.insert_one(guest_user)
-    
-    token = create_token(guest_id)
-    response.set_cookie(
-        "token", 
-        token, 
-        httponly=True, 
-        secure=False,
-        samesite="lax",
-        max_age=24 * 3600  # 24 hours for guest
-    )
-    return {"token": token, "user": {"id": guest_id, "username": guest_user["username"], "email": guest_user["email"], "is_guest": True}}
-
-=======
-    return {"token": token, "user": {"id": user['id'], "username": user['username'], "email": user['email']}}
-
->>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
 @api_router.get("/auth/me")
 async def get_me(current_user: dict = Depends(get_current_user)):
     user = dict(current_user)
@@ -287,10 +194,6 @@ async def get_me(current_user: dict = Depends(get_current_user)):
 # ===== Pin Routes =====
 @api_router.post("/pins", response_model=Pin)
 async def create_pin(pin_data: PinCreate, current_user: dict = Depends(get_current_user)):
-<<<<<<< HEAD
-    # Fix A — add userId to pin document stored in MongoDB
-=======
->>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
     pin = Pin(
         user_id=current_user['id'],
         username=current_user['username'],
@@ -302,84 +205,7 @@ async def create_pin(pin_data: PinCreate, current_user: dict = Depends(get_curre
 @api_router.get("/pins")
 async def get_pins(privacy: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     query = {}
-<<<<<<< HEAD
 
-    is_guest = current_user.get('is_guest', False)
-
-    if privacy:
-        query['privacy'] = privacy
-    else:
-        friends = current_user.get('friends', [])
-
-        if is_guest:
-            # Guest users see only their private pins to avoid sharing with others
-            query = {
-                "user_id": current_user['id']
-            }
-        else:
-            # Authenticated users see public pins, their own pins, and friends' pins
-            query = {
-                "$or": [
-                    {"privacy": "public", "user_id": {"$ne": current_user['id']}},
-                    {"user_id": current_user['id']},
-                    {"$and": [{"privacy": "friends"}, {"user_id": {"$in": friends}}]}
-                ]
-            }
-
-    pins = await db.pins.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
-
-    # Embed media for each pin
-    for pin in pins:
-        media_items = await db.media.find({"pin_id": pin["id"]}, {"_id": 0}).to_list(100)
-        result_media = []
-        for media in media_items:
-            try:
-                grid_out = await fs.open_download_stream(ObjectId(media["file_id"]))
-                content = await grid_out.read()
-                # motor returns bytes, no need to await again on 'content'
-                base64_data = base64.b64encode(content).decode("utf-8")
-                ct = (grid_out.metadata or {}).get("content_type", "image/jpeg")
-                media["file_data"] = f"data:{ct};base64,{base64_data}"
-                result_media.append(media)
-            except Exception as e:
-                logging.error(f"Error embedding media for pin {pin['id']}: {e}")
-                continue
-        pin["media"] = result_media
-
-    return pins
-
-@api_router.get("/users/{user_id}/pins")
-async def get_user_pins(user_id: str, current_user: dict = Depends(get_current_user)):
-    # List pins created by a specific user
-    if user_id != current_user['id']:
-        # Optionally add friend or public check to allow viewing others' pins
-        raise HTTPException(status_code=403, detail="Not authorized to view pins of other users")
-    pins = await db.pins.find({"user_id": user_id}, {"_id": 0}).sort("created_at", -1).to_list(1000)
-    return pins
-
-@api_router.delete("/pins/{pin_id}")
-async def delete_pin(pin_id: str, current_user: dict = Depends(get_current_user)):
-    pin = await db.pins.find_one({"id": pin_id}, {"_id": 0})
-    if not pin:
-        raise HTTPException(status_code=404, detail="Pin not found")
-    if pin['user_id'] != current_user['id']:
-        raise HTTPException(status_code=403, detail="Not authorized to delete this pin")
-    
-    # Delete associated media
-    media_items = await db.media.find({"pin_id": pin_id}, {"_id": 0}).to_list(1000)
-    for media in media_items:
-        try:
-            await fs.delete(ObjectId(media['file_id']))
-        except Exception as e:
-            logging.error(f"Failed to delete media file: {e}")
-            pass
-    await db.media.delete_many({"pin_id": pin_id})
-    
-    await db.pins.delete_one({"id": pin_id})
-    return {"message": "Pin and its media deleted"}
-
-=======
-    
     if privacy:
         query['privacy'] = privacy
     else:
@@ -392,11 +218,10 @@ async def delete_pin(pin_id: str, current_user: dict = Depends(get_current_user)
                 {"$and": [{"privacy": "friends"}, {"user_id": {"$in": friends}}]}
             ]
         }
-    
+
     pins = await db.pins.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return pins
 
->>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
 @api_router.get("/pins/search")
 async def search_pins(q: str, current_user: dict = Depends(get_current_user)):
     """Search pins by title or description"""
@@ -415,14 +240,14 @@ async def get_pin(pin_id: str, current_user: dict = Depends(get_current_user)):
     pin = await db.pins.find_one({"id": pin_id}, {"_id": 0})
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
-    
+
     # Check privacy
     if pin['privacy'] == 'private' and pin['user_id'] != current_user['id']:
         raise HTTPException(status_code=403, detail="Access denied")
     if pin['privacy'] == 'friends' and pin['user_id'] != current_user['id']:
         if pin['user_id'] not in current_user.get('friends', []):
             raise HTTPException(status_code=403, detail="Access denied")
-    
+
     return pin
 
 @api_router.delete("/pins/{pin_id}")
@@ -432,7 +257,7 @@ async def delete_pin(pin_id: str, current_user: dict = Depends(get_current_user)
         raise HTTPException(status_code=404, detail="Pin not found")
     if pin['user_id'] != current_user['id']:
         raise HTTPException(status_code=403, detail="Not authorized")
-    
+
     # Delete associated media
     media_items = await db.media.find({"pin_id": pin_id}, {"_id": 0}).to_list(1000)
     for media in media_items:
@@ -441,7 +266,7 @@ async def delete_pin(pin_id: str, current_user: dict = Depends(get_current_user)
         except:
             pass
     await db.media.delete_many({"pin_id": pin_id})
-    
+
     await db.pins.delete_one({"id": pin_id})
     return {"message": "Pin deleted"}
 
@@ -451,13 +276,13 @@ async def like_pin(pin_id: str, current_user: dict = Depends(get_current_user)):
     pin = await db.pins.find_one({"id": pin_id}, {"_id": 0})
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
-    
+
     likes = pin.get('likes', [])
     if current_user['id'] in likes:
         likes.remove(current_user['id'])
     else:
         likes.append(current_user['id'])
-    
+
     await db.pins.update_one({"id": pin_id}, {"$set": {"likes": likes}})
     return {"likes": len(likes), "liked": current_user['id'] in likes}
 
@@ -467,11 +292,7 @@ async def add_comment(pin_id: str, comment: Comment, current_user: dict = Depend
     pin = await db.pins.find_one({"id": pin_id}, {"_id": 0})
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
-<<<<<<< HEAD
 
-=======
-    
->>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
     new_comment = {
         "id": str(uuid.uuid4()),
         "user_id": current_user['id'],
@@ -479,33 +300,10 @@ async def add_comment(pin_id: str, comment: Comment, current_user: dict = Depend
         "text": comment.text,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
-<<<<<<< HEAD
 
     await db.pins.update_one({"id": pin_id}, {"$push": {"comments": new_comment}})
     return new_comment
 
-@api_router.delete("/pins/{pin_id}/comments/{comment_id}")
-async def delete_comment(pin_id: str, comment_id: str, current_user: dict = Depends(get_current_user)):
-    pin = await db.pins.find_one({"id": pin_id}, {"_id": 0})
-    if not pin:
-        raise HTTPException(status_code=404, detail="Pin not found")
-
-    if pin['user_id'] != current_user['id']:
-        raise HTTPException(status_code=403, detail="Not authorized to delete comments on this pin")
-
-    # Remove the comment from the comments array
-    await db.pins.update_one(
-        {"id": pin_id},
-        {"$pull": {"comments": {"id": comment_id}}}
-    )
-    return {"message": "Comment deleted"}
-
-=======
-    
-    await db.pins.update_one({"id": pin_id}, {"$push": {"comments": new_comment}})
-    return new_comment
-
->>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
 # ===== Media Routes =====
 @api_router.post("/pins/{pin_id}/media")
 async def upload_media(
@@ -519,7 +317,7 @@ async def upload_media(
         raise HTTPException(status_code=404, detail="Pin not found")
     if pin['user_id'] != current_user['id']:
         raise HTTPException(status_code=403, detail="Not authorized")
-    
+
     # Determine media type
     content_type = file.content_type or ""
     if content_type.startswith('image/'):
@@ -528,19 +326,15 @@ async def upload_media(
         media_type = "video"
     else:
         raise HTTPException(status_code=400, detail="Invalid file type")
-    
+
     # Upload to GridFS
     file_content = await file.read()
     file_id = await fs.upload_from_stream(
-<<<<<<< HEAD
         file.filename or "uploaded_file",
-=======
-        file.filename,
->>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
         file_content,
         metadata={"content_type": content_type}
     )
-    
+
     # Create media record
     media = Media(
         pin_id=pin_id,
@@ -550,46 +344,16 @@ async def upload_media(
         caption=caption
     )
     await db.media.insert_one(media.model_dump())
-    
+
     # Update pin media count
     await db.pins.update_one({"id": pin_id}, {"$inc": {"media_count": 1}})
-    
+
     return media.model_dump()
 
 @api_router.get("/pins/{pin_id}/media")
 async def get_media(pin_id: str, current_user: dict = Depends(get_current_user)):
     media_list = await db.media.find({"pin_id": pin_id}, {"_id": 0}).to_list(1000)
-<<<<<<< HEAD
 
-    # Convert GridFS files to base64
-    result = []
-    for i, media in enumerate(media_list):
-        try:
-            grid_out = await fs.open_download_stream(ObjectId(media['file_id']))
-            content = await grid_out.read()  # Await the asynchronous read
-            # If content is a coroutine (future), await it
-            if hasattr(content, '__await__'):
-                content = await content
-            if not isinstance(content, (bytes, bytearray)):
-                logging.error(f"Media content is not bytes for media id {media['id']}")
-                continue
-            base64_data = base64.b64encode(content).decode('utf-8')
-            content_type = (grid_out.metadata or {}).get('content_type', 'image/jpeg')
-            media['file_data'] = f"data:{content_type};base64,{base64_data}"
-            result.append(media)
-            if i == 0 and base64_data:
-                logging.info(f"Sample base64 for media id {media['id']}: {base64_data[:30]}...")
-                logging.info(f"Content type: {content_type}")
-        except Exception as e:
-            logging.error(f"Error reading media: {e}")
-            continue
-
-    logging.info(f"Fetched {len(result)} media items for pin {pin_id}")
-    for m in result:
-        logging.info(f"Media id {m['id']} has file_data length {len(m['file_data'])}")
-
-=======
-    
     # Convert GridFS files to base64
     result = []
     for media in media_list:
@@ -602,8 +366,7 @@ async def get_media(pin_id: str, current_user: dict = Depends(get_current_user))
         except Exception as e:
             logging.error(f"Error reading media: {e}")
             continue
-    
->>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
+
     return result
 
 @api_router.delete("/media/{media_id}")
@@ -613,91 +376,20 @@ async def delete_media(media_id: str, current_user: dict = Depends(get_current_u
         raise HTTPException(status_code=404, detail="Media not found")
     if media['user_id'] != current_user['id']:
         raise HTTPException(status_code=403, detail="Not authorized")
-    
+
     # Delete from GridFS
     try:
         await fs.delete(ObjectId(media['file_id']))
     except:
         pass
-    
+
     await db.media.delete_one({"id": media_id})
-    
+
     # Update pin media count
     await db.pins.update_one({"id": media['pin_id']}, {"$inc": {"media_count": -1}})
-    
+
     return {"message": "Media deleted"}
 
-# ===== Friend Routes =====
-@api_router.post("/friends/request/{user_id}")
-async def send_friend_request(user_id: str, current_user: dict = Depends(get_current_user)):
-    if user_id == current_user['id']:
-        raise HTTPException(status_code=400, detail="Cannot add yourself")
-    
-    target_user = await db.users.find_one({"id": user_id}, {"_id": 0})
-    if not target_user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    # Check if already friends
-    if user_id in current_user.get('friends', []):
-        raise HTTPException(status_code=400, detail="Already friends")
-    
-    # Add to friend requests
-    await db.users.update_one(
-        {"id": user_id},
-        {"$addToSet": {"friend_requests": current_user['id']}}
-    )
-    
-    return {"message": "Friend request sent"}
-
-@api_router.post("/friends/accept/{user_id}")
-async def accept_friend_request(user_id: str, current_user: dict = Depends(get_current_user)):
-    # Check if request exists
-    if user_id not in current_user.get('friend_requests', []):
-        raise HTTPException(status_code=400, detail="No friend request found")
-    
-    # Add to both friends lists
-    await db.users.update_one(
-        {"id": current_user['id']},
-        {
-            "$addToSet": {"friends": user_id},
-            "$pull": {"friend_requests": user_id}
-        }
-    )
-    await db.users.update_one(
-        {"id": user_id},
-        {"$addToSet": {"friends": current_user['id']}}
-    )
-    
-    return {"message": "Friend request accepted"}
-
-@api_router.get("/friends")
-async def get_friends(current_user: dict = Depends(get_current_user)):
-    friend_ids = current_user.get('friends', [])
-    friends = await db.users.find({"id": {"$in": friend_ids}}, {"_id": 0, "password_hash": 0}).to_list(1000)
-    return friends
-
-@api_router.get("/friends/requests")
-async def get_friend_requests(current_user: dict = Depends(get_current_user)):
-    request_ids = current_user.get('friend_requests', [])
-    requests = await db.users.find({"id": {"$in": request_ids}}, {"_id": 0, "password_hash": 0}).to_list(1000)
-    return requests
-
-# ===== User Search =====
-@api_router.get("/users/search")
-async def search_users(q: str, current_user: dict = Depends(get_current_user)):
-    users = await db.users.find(
-        {
-            "$or": [
-                {"username": {"$regex": q, "$options": "i"}},
-                {"email": {"$regex": q, "$options": "i"}}
-            ],
-            "id": {"$ne": current_user['id']}
-        },
-        {"_id": 0, "password_hash": 0}
-    ).limit(20).to_list(20)
-    return users
-
-<<<<<<< HEAD
 # ===== Profile Picture Routes =====
 @api_router.post("/users/profile-picture")
 async def upload_profile_picture(
@@ -741,85 +433,76 @@ async def get_profile_picture(user_id: str):
         logging.error(f"Error retrieving profile picture: {e}")
         raise HTTPException(status_code=500, detail="Error retrieving profile picture")
 
-# ===== Message Routes =====
-@api_router.post("/messages")
-async def send_message(message_data: MessageCreate, current_user: dict = Depends(get_current_user)):
-    # Check if recipient is a friend
-    if message_data.recipient_id not in current_user.get('friends', []):
-        raise HTTPException(status_code=403, detail="Can only message friends")
+# ===== Friend Routes =====
+@api_router.post("/friends/request/{user_id}")
+async def send_friend_request(user_id: str, current_user: dict = Depends(get_current_user)):
+    if user_id == current_user['id']:
+        raise HTTPException(status_code=400, detail="Cannot add yourself")
 
-    # Get recipient info
-    recipient = await db.users.find_one({"id": message_data.recipient_id}, {"_id": 0, "username": 1})
-    if not recipient:
-        raise HTTPException(status_code=404, detail="Recipient not found")
+    target_user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
 
-    message = Message(
-        sender_id=current_user['id'],
-        sender_username=current_user['username'],
-        recipient_id=message_data.recipient_id,
-        recipient_username=recipient['username'],
-        content=message_data.content
+    # Check if already friends
+    if user_id in current_user.get('friends', []):
+        raise HTTPException(status_code=400, detail="Already friends")
+
+    # Add to friend requests
+    await db.users.update_one(
+        {"id": user_id},
+        {"$addToSet": {"friend_requests": current_user['id']}}
     )
 
-    await db.messages.insert_one(message.model_dump())
-    return message
+    return {"message": "Friend request sent"}
 
-@api_router.get("/messages/{friend_id}")
-async def get_messages(friend_id: str, current_user: dict = Depends(get_current_user)):
-    # Check if friend_id is actually a friend
-    if friend_id not in current_user.get('friends', []):
-        raise HTTPException(status_code=403, detail="Can only view messages with friends")
+@api_router.post("/friends/accept/{user_id}")
+async def accept_friend_request(user_id: str, current_user: dict = Depends(get_current_user)):
+    # Check if request exists
+    if user_id not in current_user.get('friend_requests', []):
+        raise HTTPException(status_code=400, detail="No friend request found")
 
-    # Get messages between current user and friend
-    messages = await db.messages.find(
+    # Add to both friends lists
+    await db.users.update_one(
+        {"id": current_user['id']},
+        {
+            "$addToSet": {"friends": user_id},
+            "$pull": {"friend_requests": user_id}
+        }
+    )
+    await db.users.update_one(
+        {"id": user_id},
+        {"$addToSet": {"friends": current_user['id']}}
+    )
+
+    return {"message": "Friend request accepted"}
+
+@api_router.get("/friends")
+async def get_friends(current_user: dict = Depends(get_current_user)):
+    friend_ids = current_user.get('friends', [])
+    friends = await db.users.find({"id": {"$in": friend_ids}}, {"_id": 0, "password_hash": 0}).to_list(1000)
+    return friends
+
+@api_router.get("/friends/requests")
+async def get_friend_requests(current_user: dict = Depends(get_current_user)):
+    request_ids = current_user.get('friend_requests', [])
+    requests = await db.users.find({"id": {"$in": request_ids}}, {"_id": 0, "password_hash": 0}).to_list(1000)
+    return requests
+
+# ===== User Search =====
+@api_router.get("/users/search")
+async def search_users(q: str, current_user: dict = Depends(get_current_user)):
+    users = await db.users.find(
         {
             "$or": [
-                {"sender_id": current_user['id'], "recipient_id": friend_id},
-                {"sender_id": friend_id, "recipient_id": current_user['id']}
-            ]
+                {"username": {"$regex": q, "$options": "i"}},
+                {"email": {"$regex": q, "$options": "i"}}
+            ],
+            "id": {"$ne": current_user['id']}
         },
-        {"_id": 0}
-    ).sort("created_at", 1).to_list(1000)
+        {"_id": 0, "password_hash": 0}
+    ).limit(20).to_list(20)
+    return users
 
-    return messages
-
-@api_router.get("/messages")
-async def get_conversations(current_user: dict = Depends(get_current_user)):
-    # Get all conversations (latest message from each friend)
-    pipeline = [
-        {
-            "$match": {
-                "$or": [
-                    {"sender_id": current_user['id']},
-                    {"recipient_id": current_user['id']}
-                ]
-            }
-        },
-        {
-            "$sort": {"created_at": -1}
-        },
-        {
-            "$group": {
-                "_id": {
-                    "$cond": {
-                        "if": {"$eq": ["$sender_id", current_user['id']]},
-                        "then": "$recipient_id",
-                        "else": "$sender_id"
-                    }
-                },
-                "latest_message": {"$first": "$$ROOT"}
-            }
-        },
-        {
-            "$replaceRoot": {"newRoot": "$latest_message"}
-        }
-    ]
-
-    conversations = await db.messages.aggregate(pipeline).to_list(100)
-    return conversations
-
-=======
->>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
 # ===== Event Routes =====
 @api_router.post("/events", response_model=Event)
 async def create_event(event_data: EventCreate, current_user: dict = Depends(get_current_user)):
@@ -854,13 +537,13 @@ async def attend_event(event_id: str, current_user: dict = Depends(get_current_u
     event = await db.events.find_one({"id": event_id}, {"_id": 0})
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
-    
+
     attendees = event.get('attendees', [])
     if current_user['id'] in attendees:
         attendees.remove(current_user['id'])
     else:
         attendees.append(current_user['id'])
-    
+
     await db.events.update_one({"id": event_id}, {"$set": {"attendees": attendees}})
     return {"attendees": len(attendees), "attending": current_user['id'] in attendees}
 
@@ -882,7 +565,7 @@ async def get_trending(current_user: dict = Depends(get_current_user)):
 async def get_nearby(lat: float, lng: float, radius_km: float = 10, current_user: dict = Depends(get_current_user)):
     # Simple distance calculation (for production, use geospatial queries)
     all_pins = await db.pins.find({"privacy": "public"}, {"_id": 0}).to_list(1000)
-    
+
     nearby = []
     for pin in all_pins:
         # Haversine formula approximation
@@ -892,24 +575,13 @@ async def get_nearby(lat: float, lng: float, radius_km: float = 10, current_user
         if distance <= radius_km:
             pin['distance'] = round(distance, 2)
             nearby.append(pin)
-    
+
     nearby.sort(key=lambda x: x['distance'])
     return nearby[:50]
 
 # Include router
 app.include_router(api_router)
 
-<<<<<<< HEAD
-=======
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
->>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -918,8 +590,4 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
-<<<<<<< HEAD
     client.close()
-=======
-    client.close()
->>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb

@@ -38,13 +38,6 @@
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.3",
     "embla-carousel-react": "^8.6.0",
-=======
-    "date-fns": "^4.1.0",
-    "dotenv": "^17.2.3",
-    "embla-carousel-react": "^8.6.0",
-=======
->>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
-    "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.507.0",
     "mapbox-gl": "^3.16.0",
