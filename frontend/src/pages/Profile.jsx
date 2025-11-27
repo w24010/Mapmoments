@@ -3,7 +3,11 @@ import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+<<<<<<< HEAD
 import { MapPin, ArrowLeft, Users, Heart, Search, UserPlus, Check, X, Camera, MessageCircle } from 'lucide-react';
+=======
+import { MapPin, ArrowLeft, Users, Heart, Search, UserPlus, Check, X } from 'lucide-react';
+>>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 
@@ -19,6 +23,7 @@ const Profile = ({ token, logout, user }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [activeTab, setActiveTab] = useState('pins');
+<<<<<<< HEAD
   const [profilePicture, setProfilePicture] = useState(null);
   const [messages, setMessages] = useState([]);
   const [selectedFriend, setSelectedFriend] = useState(null);
@@ -30,6 +35,12 @@ const Profile = ({ token, logout, user }) => {
       fetchProfilePicture();
     }
   }, [currentUser]);
+=======
+
+  useEffect(() => {
+    fetchUserData();
+  }, []);
+>>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
 
   const fetchUserData = async () => {
     try {
@@ -50,6 +61,7 @@ const Profile = ({ token, logout, user }) => {
     }
   };
 
+<<<<<<< HEAD
   const fetchProfilePicture = async () => {
     try {
       const response = await axios.get(`${API}/users/${currentUser?.id}/profile-picture`, {
@@ -112,6 +124,8 @@ const Profile = ({ token, logout, user }) => {
     }
   };
 
+=======
+>>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
 
@@ -173,6 +187,7 @@ const Profile = ({ token, logout, user }) => {
         {currentUser && (
           <Card data-testid="user-info-card" className="glass border-white/20 p-8 mb-8 shadow-xl">
             <div className="flex items-center gap-6">
+<<<<<<< HEAD
               <div className="relative">
                 <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white text-3xl font-bold shadow-lg overflow-hidden">
                   {profilePicture ? (
@@ -194,6 +209,10 @@ const Profile = ({ token, logout, user }) => {
                     className="hidden"
                   />
                 </label>
+=======
+              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white text-3xl font-bold shadow-lg">
+                {currentUser.username.charAt(0).toUpperCase()}
+>>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
               </div>
               <div className="flex-1">
                 <h2 className="text-3xl font-bold text-slate-800 mb-2">{currentUser.username}</h2>
@@ -251,6 +270,7 @@ const Profile = ({ token, logout, user }) => {
               </span>
             )}
           </Button>
+<<<<<<< HEAD
           <Button
             onClick={() => setActiveTab('messages')}
             className={`glass rounded-xl px-6 py-3 ${
@@ -261,6 +281,8 @@ const Profile = ({ token, logout, user }) => {
             <MessageCircle className="w-5 h-5 mr-2" />
             Messages
           </Button>
+=======
+>>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
         </div>
 
         {/* Content */}
@@ -394,6 +416,7 @@ const Profile = ({ token, logout, user }) => {
             </Card>
           </div>
         )}
+<<<<<<< HEAD
 
         {activeTab === 'messages' && (
           <div className="space-y-6">
@@ -486,6 +509,8 @@ const Profile = ({ token, logout, user }) => {
             )}
           </div>
         )}
+=======
+>>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
       </div>
     </div>
   );

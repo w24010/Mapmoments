@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, File, UploadFile, Form, status, Response, Request
+=======
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, File, UploadFile, Form, status
+>>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -31,6 +35,7 @@ JWT_EXPIRATION_HOURS = 168  # 7 days
 
 # Create the main app
 app = FastAPI()
+<<<<<<< HEAD
 
 # CORS must come BEFORE router
 app.add_middleware(
@@ -52,6 +57,11 @@ security = HTTPBearer()
 async def health_check():
     return {"status": "ok", "message": "Backend is running"}
 
+=======
+api_router = APIRouter(prefix="/api")
+security = HTTPBearer()
+
+>>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
 # ===== Models =====
 class UserCreate(BaseModel):
     username: str
@@ -92,7 +102,11 @@ class PinCreate(BaseModel):
     description: str
     latitude: float
     longitude: float
+<<<<<<< HEAD
     privacy: str = "private"
+=======
+    privacy: str = "public"
+>>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
 
 class Comment(BaseModel):
     text: str
@@ -129,6 +143,7 @@ class EventCreate(BaseModel):
     longitude: float
     location_name: str
 
+<<<<<<< HEAD
 # ===== Message Models =====
 class MessageCreate(BaseModel):
     recipient_id: str
@@ -145,6 +160,8 @@ class Message(BaseModel):
     read: bool = False
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
+=======
+>>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
 # ===== Auth Helpers =====
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
@@ -173,7 +190,11 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 
 # ===== Auth Routes =====
 @api_router.post("/auth/register")
+<<<<<<< HEAD
 async def register(user_data: UserCreate, response: Response):
+=======
+async def register(user_data: UserCreate):
+>>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
     # Check if user exists
     existing = await db.users.find_one({"$or": [{"email": user_data.email}, {"username": user_data.username}]}, {"_id": 0})
     if existing:
@@ -190,6 +211,7 @@ async def register(user_data: UserCreate, response: Response):
     await db.users.insert_one(user_dict)
     
     token = create_token(user.id)
+<<<<<<< HEAD
     response.set_cookie(
         "token", 
         token, 
@@ -202,11 +224,18 @@ async def register(user_data: UserCreate, response: Response):
 
 @api_router.post("/auth/login")
 async def login(login_data: UserLogin, response: Response):
+=======
+    return {"token": token, "user": {"id": user.id, "username": user.username, "email": user.email}}
+
+@api_router.post("/auth/login")
+async def login(login_data: UserLogin):
+>>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
     user = await db.users.find_one({"email": login_data.email}, {"_id": 0})
     if not user or not verify_password(login_data.password, user['password_hash']):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     token = create_token(user['id'])
+<<<<<<< HEAD
     response.set_cookie(
         "token", 
         token, 
@@ -245,6 +274,10 @@ async def guest_login(response: Response):
     )
     return {"token": token, "user": {"id": guest_id, "username": guest_user["username"], "email": guest_user["email"], "is_guest": True}}
 
+=======
+    return {"token": token, "user": {"id": user['id'], "username": user['username'], "email": user['email']}}
+
+>>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
 @api_router.get("/auth/me")
 async def get_me(current_user: dict = Depends(get_current_user)):
     user = dict(current_user)
@@ -254,7 +287,10 @@ async def get_me(current_user: dict = Depends(get_current_user)):
 # ===== Pin Routes =====
 @api_router.post("/pins", response_model=Pin)
 async def create_pin(pin_data: PinCreate, current_user: dict = Depends(get_current_user)):
+<<<<<<< HEAD
     # Fix A — add userId to pin document stored in MongoDB
+=======
+>>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
     pin = Pin(
         user_id=current_user['id'],
         username=current_user['username'],
@@ -266,6 +302,7 @@ async def create_pin(pin_data: PinCreate, current_user: dict = Depends(get_curre
 @api_router.get("/pins")
 async def get_pins(privacy: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     query = {}
+<<<<<<< HEAD
 
     is_guest = current_user.get('is_guest', False)
 
@@ -341,6 +378,25 @@ async def delete_pin(pin_id: str, current_user: dict = Depends(get_current_user)
     await db.pins.delete_one({"id": pin_id})
     return {"message": "Pin and its media deleted"}
 
+=======
+    
+    if privacy:
+        query['privacy'] = privacy
+    else:
+        # Get public pins and user's own pins and friends' pins
+        friends = current_user.get('friends', [])
+        query = {
+            "$or": [
+                {"privacy": "public"},
+                {"user_id": current_user['id']},
+                {"$and": [{"privacy": "friends"}, {"user_id": {"$in": friends}}]}
+            ]
+        }
+    
+    pins = await db.pins.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return pins
+
+>>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
 @api_router.get("/pins/search")
 async def search_pins(q: str, current_user: dict = Depends(get_current_user)):
     """Search pins by title or description"""
@@ -411,7 +467,11 @@ async def add_comment(pin_id: str, comment: Comment, current_user: dict = Depend
     pin = await db.pins.find_one({"id": pin_id}, {"_id": 0})
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
+<<<<<<< HEAD
 
+=======
+    
+>>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
     new_comment = {
         "id": str(uuid.uuid4()),
         "user_id": current_user['id'],
@@ -419,6 +479,7 @@ async def add_comment(pin_id: str, comment: Comment, current_user: dict = Depend
         "text": comment.text,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
+<<<<<<< HEAD
 
     await db.pins.update_one({"id": pin_id}, {"$push": {"comments": new_comment}})
     return new_comment
@@ -439,6 +500,12 @@ async def delete_comment(pin_id: str, comment_id: str, current_user: dict = Depe
     )
     return {"message": "Comment deleted"}
 
+=======
+    
+    await db.pins.update_one({"id": pin_id}, {"$push": {"comments": new_comment}})
+    return new_comment
+
+>>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
 # ===== Media Routes =====
 @api_router.post("/pins/{pin_id}/media")
 async def upload_media(
@@ -465,7 +532,11 @@ async def upload_media(
     # Upload to GridFS
     file_content = await file.read()
     file_id = await fs.upload_from_stream(
+<<<<<<< HEAD
         file.filename or "uploaded_file",
+=======
+        file.filename,
+>>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
         file_content,
         metadata={"content_type": content_type}
     )
@@ -488,6 +559,7 @@ async def upload_media(
 @api_router.get("/pins/{pin_id}/media")
 async def get_media(pin_id: str, current_user: dict = Depends(get_current_user)):
     media_list = await db.media.find({"pin_id": pin_id}, {"_id": 0}).to_list(1000)
+<<<<<<< HEAD
 
     # Convert GridFS files to base64
     result = []
@@ -516,6 +588,22 @@ async def get_media(pin_id: str, current_user: dict = Depends(get_current_user))
     for m in result:
         logging.info(f"Media id {m['id']} has file_data length {len(m['file_data'])}")
 
+=======
+    
+    # Convert GridFS files to base64
+    result = []
+    for media in media_list:
+        try:
+            grid_out = await fs.open_download_stream(ObjectId(media['file_id']))
+            content = await grid_out.read()
+            base64_data = base64.b64encode(content).decode('utf-8')
+            media['file_data'] = f"data:{grid_out.metadata.get('content_type', 'image/jpeg')};base64,{base64_data}"
+            result.append(media)
+        except Exception as e:
+            logging.error(f"Error reading media: {e}")
+            continue
+    
+>>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
     return result
 
 @api_router.delete("/media/{media_id}")
@@ -609,6 +697,7 @@ async def search_users(q: str, current_user: dict = Depends(get_current_user)):
     ).limit(20).to_list(20)
     return users
 
+<<<<<<< HEAD
 # ===== Profile Picture Routes =====
 @api_router.post("/users/profile-picture")
 async def upload_profile_picture(
@@ -729,6 +818,8 @@ async def get_conversations(current_user: dict = Depends(get_current_user)):
     conversations = await db.messages.aggregate(pipeline).to_list(100)
     return conversations
 
+=======
+>>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
 # ===== Event Routes =====
 @api_router.post("/events", response_model=Event)
 async def create_event(event_data: EventCreate, current_user: dict = Depends(get_current_user)):
@@ -808,6 +899,17 @@ async def get_nearby(lat: float, lng: float, radius_km: float = 10, current_user
 # Include router
 app.include_router(api_router)
 
+<<<<<<< HEAD
+=======
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+>>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -816,4 +918,8 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
+<<<<<<< HEAD
     client.close()
+=======
+    client.close()
+>>>>>>> fd888746df7d9f0811970ac164b2638516f55fcb
