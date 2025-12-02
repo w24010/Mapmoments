@@ -1,0 +1,2 @@
+- [x] Update CORS import and middleware in backend/server.py
+- [x] Restart the FastAPI server to apply changes (manual restart required due to command issues)
