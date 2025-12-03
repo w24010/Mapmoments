@@ -23,6 +23,7 @@ FRONTEND_ORIGINS = os.environ.get(
     "FRONTEND_ORIGINS",
     "https://mapmoments-nm78ck161-w24010s-projects.vercel.app,https://mapmoments-kntmsj755-w24010s-projects.vercel.app,http://localhost:3000",
 ).split(",")
+FRONTEND_ORIGINS = [origin.strip() for origin in FRONTEND_ORIGINS if origin.strip()]
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
 
 # MongoDB connection
@@ -55,6 +56,11 @@ security = HTTPBearer()
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "message": "Backend is running"}
+
+# Explicit OPTIONS handler for auth login preflight
+@app.options("/api/auth/login")
+async def options_login():
+    return Response(status_code=200)
 
 # ===== Models =====
 class UserCreate(BaseModel):
