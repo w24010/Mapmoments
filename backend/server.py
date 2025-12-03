@@ -21,7 +21,7 @@ load_dotenv(ROOT_DIR / '.env')
 # Configurable frontend origins and cookie security for production
 FRONTEND_ORIGINS = os.environ.get(
     "FRONTEND_ORIGINS",
-    "https://mapmoments-nm78ck161-w24010s-projects.vercel.app,https://mapmoments-kntmsj755-w24010s-projects.vercel.app,http://localhost:3000",
+    "https://mapmoments.vercel.app,https://mapmoments-nm78ck161-w24010s-projects.vercel.app,https://mapmoments-kntmsj755-w24010s-projects.vercel.app,http://localhost:3000",
 ).split(",")
 FRONTEND_ORIGINS = [origin.strip() for origin in FRONTEND_ORIGINS if origin.strip()]
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
