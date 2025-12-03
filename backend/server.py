@@ -62,6 +62,16 @@ async def health_check():
 async def options_login():
     return Response(status_code=200)
 
+# Mirror OPTIONS handler on the API router (prefix "/api")
+@api_router.options("/auth/login")
+async def options_login_router():
+    return Response(status_code=200)
+
+# Handle trailing slash variant
+@api_router.options("/auth/login/")
+async def options_login_router_slash():
+    return Response(status_code=200)
+
 # ===== Models =====
 class UserCreate(BaseModel):
     username: str
