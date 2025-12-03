@@ -21,7 +21,7 @@ load_dotenv(ROOT_DIR / '.env')
 # Configurable frontend origins and cookie security for production
 FRONTEND_ORIGINS = os.environ.get(
     "FRONTEND_ORIGINS",
-    "http://localhost:3000,https://spotshare-18.preview.emergentagent.com",
+    "https://mapmoments-nm78ck161-w24010s-projects.vercel.app,https://mapmoments-kntmsj755-w24010s-projects.vercel.app,http://localhost:3000",
 ).split(",")
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
 
@@ -39,13 +39,10 @@ JWT_EXPIRATION_HOURS = 168  # 7 days
 # Create the main app
 app = FastAPI()
 
-# CORS must come BEFORE router
+# CORS must come BEFORE router - use FRONTEND_ORIGINS from env
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "https://spotshare-18.preview.emergentagent.com"
-    ],
+    allow_origins=FRONTEND_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
