@@ -49,6 +49,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Log active CORS origins for visibility in deployment logs
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+logger.info(f"CORS allow_origins: {FRONTEND_ORIGINS}")
+
 api_router = APIRouter(prefix="/api")
 security = HTTPBearer()
 
@@ -214,7 +222,7 @@ async def register(user_data: UserCreate, response: Response):
         "token", 
         token, 
         httponly=True, 
-        secure=False,
+        secure=COOKIE_SECURE,
         samesite="lax",
         max_age=JWT_EXPIRATION_HOURS * 3600
     )
@@ -231,7 +239,7 @@ async def login(login_data: UserLogin, response: Response):
         "token", 
         token, 
         httponly=True, 
-        secure=False,
+        secure=COOKIE_SECURE,
         samesite="lax",
         max_age=JWT_EXPIRATION_HOURS * 3600
     )
@@ -259,7 +267,7 @@ async def guest_login(response: Response):
         "token", 
         token, 
         httponly=True, 
-        secure=False,
+        secure=COOKIE_SECURE,
         samesite="lax",
         max_age=24 * 3600  # 24 hours for guest
     )
@@ -803,12 +811,6 @@ async def get_nearby(lat: float, lng: float, radius_km: float = 10, current_user
 
 # Include router
 app.include_router(api_router)
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
