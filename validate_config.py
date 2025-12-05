@@ -92,6 +92,8 @@ def validate_cors_configuration():
     has_localhost = False
     has_production = False
     
+    # Note: String matching below is for informational display only,
+    # not for security validation or URL sanitization
     for i, origin in enumerate(frontend_origins, 1):
         if "localhost" in origin:
             has_localhost = True

@@ -66,7 +66,7 @@ The frontend requires the following environment variables to be configured in Ve
 | Variable | Description | Example Value | Notes |
 |----------|-------------|---------------|-------|
 | `REACT_APP_BACKEND_URL` | Backend API URL | `https://mapmoments-backend.onrender.com` | **Required**. Your deployed backend URL |
-| `REACT_APP_MAPBOX_TOKEN` | Mapbox API token | `pk.eyJ1IjoidzI...` | **Required**. Get from https://account.mapbox.com/ |
+| `REACT_APP_MAPBOX_TOKEN` | Mapbox API token | `pk.your-token-here...` | **Required**. Get from https://account.mapbox.com/ |
 
 ### Optional Variables
 
@@ -139,7 +139,7 @@ https://mapmoments.vercel.app,https://mapmoments-*.vercel.app
 2. Set these environment variables in Vercel:
    ```
    REACT_APP_BACKEND_URL=https://mapmoments-backend.onrender.com
-   REACT_APP_MAPBOX_TOKEN=pk.eyJ1IjoidzI0MDEwIiwiYSI6ImNtZ3JkdWNlNDA1ajAyanB2NzFwd2Z1dXUifQ.zbrJVrV-s1O2zHKKckI-Hw
+   REACT_APP_MAPBOX_TOKEN=pk.your-mapbox-token-here
    ```
 3. Redeploy to apply changes
 
@@ -239,7 +239,7 @@ PORT=8000
 ### Frontend: `frontend/.env.local`
 ```bash
 REACT_APP_BACKEND_URL=http://localhost:8000
-REACT_APP_MAPBOX_TOKEN=pk.eyJ1IjoidzI0MDEwIiwiYSI6ImNtZ3JkdWNlNDA1ajAyanB2NzFwd2Z1dXUifQ.zbrJVrV-s1O2zHKKckI-Hw
+REACT_APP_MAPBOX_TOKEN=pk.your-mapbox-token-here
 ```
 
 ---

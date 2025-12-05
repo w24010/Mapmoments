@@ -22,7 +22,7 @@ COOKIE_SECURE=true
 ### 3. Frontend (Vercel) - Required Environment Variables
 ```
 REACT_APP_BACKEND_URL=https://your-backend.onrender.com
-REACT_APP_MAPBOX_TOKEN=pk.eyJ1IjoidzI0MDEwIiwiYSI6ImNtZ3JkdWNlNDA1ajAyanB2NzFwd2Z1dXUifQ.zbrJVrV-s1O2zHKKckI-Hw
+REACT_APP_MAPBOX_TOKEN=pk.your-mapbox-token-here
 ```
 
 ---
