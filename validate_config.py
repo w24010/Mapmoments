@@ -164,7 +164,7 @@ def validate_imports():
         "fastapi",
         "motor",
         "bcrypt",
-        "jwt",
+        "PyJWT",  # Package name is PyJWT, imported as jwt
         "pydantic",
         "dotenv",
     ]
@@ -174,8 +174,8 @@ def validate_imports():
         try:
             if package == "dotenv":
                 __import__("dotenv")
-            elif package == "jwt":
-                __import__("jwt")
+            elif package == "PyJWT":
+                __import__("jwt")  # PyJWT is imported as 'jwt'
             else:
                 __import__(package)
             print(f"✅ {package:20} - installed")
