@@ -40,6 +40,8 @@ frontend/.env.local
 !.env.example
 !frontend/.env.example
 !backend/.env.example
+# Note: .env.production is kept as documentation template with placeholders only
+# Configure actual values in deployment platform (e.g., Vercel dashboard)
 
 *token.json*
 *credentials.json*
