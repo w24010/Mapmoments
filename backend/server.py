@@ -19,15 +19,29 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # Configurable frontend origins and cookie security for production
-FRONTEND_ORIGINS = os.environ.get(
-    "FRONTEND_ORIGINS",
-    "https://mapmoments.vercel.app,https://mapmoments-nm78ck161-w24010s-projects.vercel.app,https://mapmoments-kntmsj755-w24010s-projects.vercel.app,http://localhost:3000",
-).split(",")
-FRONTEND_ORIGINS = [origin.strip() for origin in FRONTEND_ORIGINS if origin.strip()]
-COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
+# Default includes common Vercel patterns - update with your actual domain
+default_origins = "https://mapmoments.vercel.app,http://localhost:3000"
+FRONTEND_ORIGINS_STR = os.environ.get("FRONTEND_ORIGINS", default_origins)
+FRONTEND_ORIGINS = [origin.strip() for origin in FRONTEND_ORIGINS_STR.split(",") if origin.strip()]
+
+# Helper function to check if origin is allowed (supports Vercel preview URLs)
+def is_origin_allowed(origin: str) -> bool:
+    if not origin:
+        return False
+    # Check exact matches
+    if origin in FRONTEND_ORIGINS:
+        return True
+    # Check if it's a Vercel preview URL (any *.vercel.app subdomain)
+    if origin.endswith(".vercel.app") and origin.startswith("https://"):
+        return True
+    return False
+
+COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "true").lower() in ("1", "true", "yes")
 
 # MongoDB connection
-mongo_url = os.environ['MONGO_URL']
+mongo_url = os.environ.get('MONGO_URL')
+if not mongo_url:
+    raise ValueError("MONGO_URL environment variable is required")
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ.get('DB_NAME', 'mapmoments_db')]
 fs = AsyncIOMotorGridFSBucket(db)
@@ -41,9 +55,11 @@ JWT_EXPIRATION_HOURS = 168  # 7 days
 app = FastAPI()
 
 # CORS must come BEFORE router - use FRONTEND_ORIGINS from env
+# Use allow_origin_regex to support Vercel preview URLs (*.vercel.app)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=FRONTEND_ORIGINS,
+    allow_origin_regex=r"https://.*\.vercel\.app",  # Allow all Vercel preview URLs
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
