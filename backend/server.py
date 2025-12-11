@@ -223,7 +223,8 @@ async def register(user_data: UserCreate, response: Response):
         email=user_data.email
     )
     user_dict = user.model_dump()
-    user_dict['password_hash'] = hash_password(user_data.password)
+    # Store hashed password under 'password' for consistency with login
+    user_dict['password'] = hash_password(user_data.password)
     
     users_collection.insert_one(user_dict)
     
@@ -241,7 +242,7 @@ async def register(user_data: UserCreate, response: Response):
 @api_router.post("/auth/login")
 async def login(login_data: UserLogin, response: Response):
     user = users_collection.find_one({"email": login_data.email}, {"_id": 0})
-    if not user or not verify_password(login_data.password, user['password_hash']):
+    if not user or not verify_password(login_data.password, user.get('password', '')):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     token = create_token(user['id'])
