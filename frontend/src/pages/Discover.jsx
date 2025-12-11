@@ -6,7 +6,7 @@ import { MapPin, ArrowLeft, TrendingUp, Navigation, Heart, MessageCircle } from 
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 const API = `${BACKEND_URL}/api`;
 
 const Discover = ({ token, logout }) => {
