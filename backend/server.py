@@ -3,7 +3,6 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
-from pymongo import MongoClient
 import os
 import logging
 from pathlib import Path
@@ -47,12 +46,6 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ.get('DB_NAME', 'mapmoments_db')]
 fs = AsyncIOMotorGridFSBucket(db)
 
-# Synchronous Mongo client for simple collections (users, etc.)
-MONGO_URL = os.getenv("MONGO_URL")
-DB_NAME = os.getenv("DB_NAME", "mapmoments_db")
-sync_client = MongoClient(MONGO_URL)
-sync_db = sync_client[DB_NAME]
-users_collection = sync_db["users"]
 # JWT Configuration
 JWT_SECRET = os.environ.get('JWT_SECRET', 'your-secret-key-change-in-production')
 JWT_ALGORITHM = 'HS256'
@@ -212,49 +205,71 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 # ===== Auth Routes =====
 @api_router.post("/auth/register")
 async def register(user_data: UserCreate, response: Response):
-    # Check if user exists
-    existing = users_collection.find_one({"$or": [{"email": user_data.email}, {"username": user_data.username}]})
-    if existing:
-        raise HTTPException(status_code=400, detail="User already exists")
-    
-    # Create user
-    user = User(
-        username=user_data.username,
-        email=user_data.email
-    )
-    user_dict = user.model_dump()
-    # Store hashed password under 'password' for consistency with login
-    user_dict['password'] = hash_password(user_data.password)
-    
-    users_collection.insert_one(user_dict)
-    
-    token = create_token(user.id)
-    response.set_cookie(
-        "token", 
-        token, 
-        httponly=True, 
-        secure=COOKIE_SECURE,
-        samesite="lax",
-        max_age=JWT_EXPIRATION_HOURS * 3600
-    )
-    return {"token": token, "user": {"id": user.id, "username": user.username, "email": user.email}}
+    try:
+        existing = await db.users.find_one(
+            {"$or": [{"email": user_data.email}, {"username": user_data.username}]},
+            {"_id": 0}
+        )
+        if existing:
+            raise HTTPException(status_code=400, detail="User already exists")
+
+        user = User(
+            username=user_data.username,
+            email=user_data.email
+        )
+        user_dict = user.model_dump()
+        user_dict['password_hash'] = hash_password(user_data.password)
+
+        await db.users.insert_one(user_dict)
+
+        token = create_token(user.id)
+        response.set_cookie(
+            "token",
+            token,
+            httponly=True,
+            secure=COOKIE_SECURE,
+            samesite="lax",
+            max_age=JWT_EXPIRATION_HOURS * 3600
+        )
+
+        logger.info(f"New user registered: {user.email}")
+        return {"token": token, "user": {"id": user.id, "username": user.username, "email": user.email}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error in /auth/register")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @api_router.post("/auth/login")
 async def login(login_data: UserLogin, response: Response):
-    user = users_collection.find_one({"email": login_data.email}, {"_id": 0})
-    if not user or not verify_password(login_data.password, user.get('password', '')):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    token = create_token(user['id'])
-    response.set_cookie(
-        "token", 
-        token, 
-        httponly=True, 
-        secure=COOKIE_SECURE,
-        samesite="lax",
-        max_age=JWT_EXPIRATION_HOURS * 3600
-    )
-    return {"token": token, "user": {"id": user['id'], "username": user['username'], "email": user['email']}}
+    try:
+        user = await db.users.find_one({"email": login_data.email}, {"_id": 0})
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+
+        hashed = user.get('password_hash') or user.get('password')
+        if not hashed or not verify_password(login_data.password, hashed):
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+
+        token = create_token(user['id'])
+        response.set_cookie(
+            "token",
+            token,
+            httponly=True,
+            secure=COOKIE_SECURE,
+            samesite="lax",
+            max_age=JWT_EXPIRATION_HOURS * 3600
+        )
+
+        logger.info(f"User login: {login_data.email}")
+        user.pop('password_hash', None)
+        user.pop('password', None)
+        return {"token": token, "user": {"id": user['id'], "username": user['username'], "email": user['email']}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error in /auth/login")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 # GET placeholder to satisfy link prefetchers hitting login with GET
 @api_router.get("/auth/login")
@@ -293,6 +308,7 @@ async def guest_login(response: Response):
 async def get_me(current_user: dict = Depends(get_current_user)):
     user = dict(current_user)
     user.pop('password_hash', None)
+    user.pop('password', None)
     return user
 
 # ===== Pin Routes =====
