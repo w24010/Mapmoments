@@ -248,6 +248,11 @@ async def login(login_data: UserLogin, response: Response):
     )
     return {"token": token, "user": {"id": user['id'], "username": user['username'], "email": user['email']}}
 
+# GET placeholder to satisfy link prefetchers hitting login with GET
+@api_router.get("/auth/login")
+async def login_prefetch():
+    return {"message": "Login endpoint requires POST"}
+
 @api_router.post("/auth/guest")
 async def guest_login(response: Response):
     # Create temporary guest user
