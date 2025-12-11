@@ -3,6 +3,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
+from pymongo import MongoClient
 import os
 import logging
 from pathlib import Path
@@ -46,6 +47,12 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ.get('DB_NAME', 'mapmoments_db')]
 fs = AsyncIOMotorGridFSBucket(db)
 
+# Synchronous Mongo client for simple collections (users, etc.)
+MONGO_URL = os.getenv("MONGO_URL")
+DB_NAME = os.getenv("DB_NAME", "mapmoments_db")
+sync_client = MongoClient(MONGO_URL)
+sync_db = sync_client[DB_NAME]
+users_collection = sync_db["users"]
 # JWT Configuration
 JWT_SECRET = os.environ.get('JWT_SECRET', 'your-secret-key-change-in-production')
 JWT_ALGORITHM = 'HS256'
@@ -206,7 +213,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 @api_router.post("/auth/register")
 async def register(user_data: UserCreate, response: Response):
     # Check if user exists
-    existing = await db.users.find_one({"$or": [{"email": user_data.email}, {"username": user_data.username}]}, {"_id": 0})
+    existing = users_collection.find_one({"$or": [{"email": user_data.email}, {"username": user_data.username}]})
     if existing:
         raise HTTPException(status_code=400, detail="User already exists")
     
@@ -218,7 +225,7 @@ async def register(user_data: UserCreate, response: Response):
     user_dict = user.model_dump()
     user_dict['password_hash'] = hash_password(user_data.password)
     
-    await db.users.insert_one(user_dict)
+    users_collection.insert_one(user_dict)
     
     token = create_token(user.id)
     response.set_cookie(
@@ -233,7 +240,7 @@ async def register(user_data: UserCreate, response: Response):
 
 @api_router.post("/auth/login")
 async def login(login_data: UserLogin, response: Response):
-    user = await db.users.find_one({"email": login_data.email}, {"_id": 0})
+    user = users_collection.find_one({"email": login_data.email}, {"_id": 0})
     if not user or not verify_password(login_data.password, user['password_hash']):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
