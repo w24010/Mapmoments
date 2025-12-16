@@ -461,7 +461,7 @@ async def like_pin(pin_id: str, current_user: dict = Depends(get_current_user)):
 # ===== Comment Routes =====
 @api_router.post("/pins/{pin_id}/comments")
 async def add_comment(pin_id: str, comment: Comment, current_user: dict = Depends(get_current_user)):
-    pin = await db.pins.find_one({"id": pin_id}, {"_id": 0})
+    pin = await db.pins.find_one({"id": pin_id})
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
 
@@ -478,7 +478,7 @@ async def add_comment(pin_id: str, comment: Comment, current_user: dict = Depend
 
 @api_router.delete("/pins/{pin_id}/comments/{comment_id}")
 async def delete_comment(pin_id: str, comment_id: str, current_user: dict = Depends(get_current_user)):
-    pin = await db.pins.find_one({"id": pin_id}, {"_id": 0})
+    pin = await db.pins.find_one({"id": pin_id})
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
 
@@ -500,7 +500,7 @@ async def upload_media(
     caption: Optional[str] = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
-    pin = await db.pins.find_one({"id": pin_id}, {"_id": 0})
+    pin = await db.pins.find_one({"id": pin_id})
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
     if pin['user_id'] != current_user['id']:
