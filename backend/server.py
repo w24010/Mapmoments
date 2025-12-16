@@ -42,8 +42,12 @@ COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "true").lower() in ("1", "true",
 mongo_url = os.environ.get('MONGO_URL')
 if not mongo_url:
     raise ValueError("MONGO_URL environment variable is required")
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ.get('DB_NAME', 'mapmoments_db')]
+client = AsyncIOMotorClient(
+    mongo_url,
+    serverSelectionTimeoutMS=5000,
+    tls=True
+)
+db = client.mapmoments
 fs = AsyncIOMotorGridFSBucket(db)
 
 # JWT Configuration
@@ -197,9 +201,10 @@ def decode_token(token: str) -> dict:
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
     payload = decode_token(credentials.credentials)
-    user = await db.users.find_one({"id": payload['user_id']}, {"_id": 0})
+    user = await db.users.find_one({"id": payload['user_id']})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    user.pop('_id', None)
     return user
 
 # ===== Auth Routes =====
@@ -207,8 +212,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 async def register(user_data: UserCreate, response: Response):
     try:
         existing = await db.users.find_one(
-            {"$or": [{"email": user_data.email}, {"username": user_data.username}]},
-            {"_id": 0}
+            {"$or": [{"email": user_data.email}, {"username": user_data.username}]}
         )
         if existing:
             raise HTTPException(status_code=400, detail="User already exists")
@@ -243,7 +247,7 @@ async def register(user_data: UserCreate, response: Response):
 @api_router.post("/auth/login")
 async def login(login_data: UserLogin, response: Response):
     try:
-        user = await db.users.find_one({"email": login_data.email}, {"_id": 0})
+        user = await db.users.find_one({"email": login_data.email})
         if not user:
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
@@ -262,6 +266,7 @@ async def login(login_data: UserLogin, response: Response):
         )
 
         logger.info(f"User login: {login_data.email}")
+        user.pop('_id', None)
         user.pop('password_hash', None)
         user.pop('password', None)
         return {"token": token, "user": {"id": user['id'], "username": user['username'], "email": user['email']}}
@@ -349,11 +354,11 @@ async def get_pins(privacy: Optional[str] = None, current_user: dict = Depends(g
                 ]
             }
 
-    pins = await db.pins.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    pins = await db.pins.find(query).sort("created_at", -1).to_list(1000)
 
     # Embed media for each pin
     for pin in pins:
-        media_items = await db.media.find({"pin_id": pin["id"]}, {"_id": 0}).to_list(100)
+        media_items = await db.media.find({"pin_id": pin["id"]}).to_list(100)
         result_media = []
         for media in media_items:
             try:
@@ -367,7 +372,11 @@ async def get_pins(privacy: Optional[str] = None, current_user: dict = Depends(g
             except Exception as e:
                 logging.error(f"Error embedding media for pin {pin['id']}: {e}")
                 continue
+        # drop internal ids
+        for m in result_media:
+            m.pop('_id', None)
         pin["media"] = result_media
+        pin.pop('_id', None)
 
     return pins
 
@@ -377,7 +386,9 @@ async def get_user_pins(user_id: str, current_user: dict = Depends(get_current_u
     if user_id != current_user['id']:
         # Optionally add friend or public check to allow viewing others' pins
         raise HTTPException(status_code=403, detail="Not authorized to view pins of other users")
-    pins = await db.pins.find({"user_id": user_id}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    pins = await db.pins.find({"user_id": user_id}).sort("created_at", -1).to_list(1000)
+    for p in pins:
+        p.pop('_id', None)
     return pins
 
 @api_router.get("/pins/search")
@@ -390,12 +401,14 @@ async def search_pins(q: str, current_user: dict = Depends(get_current_user)):
             {"description": {"$regex": q, "$options": "i"}}
         ]
     }
-    pins = await db.pins.find(query, {"_id": 0}).sort("created_at", -1).limit(50).to_list(50)
+    pins = await db.pins.find(query).sort("created_at", -1).limit(50).to_list(50)
+    for p in pins:
+        p.pop('_id', None)
     return pins
 
 @api_router.get("/pins/{pin_id}")
 async def get_pin(pin_id: str, current_user: dict = Depends(get_current_user)):
-    pin = await db.pins.find_one({"id": pin_id}, {"_id": 0})
+    pin = await db.pins.find_one({"id": pin_id})
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
     
@@ -406,18 +419,19 @@ async def get_pin(pin_id: str, current_user: dict = Depends(get_current_user)):
         if pin['user_id'] not in current_user.get('friends', []):
             raise HTTPException(status_code=403, detail="Access denied")
     
+    pin.pop('_id', None)
     return pin
 
 @api_router.delete("/pins/{pin_id}")
 async def delete_pin(pin_id: str, current_user: dict = Depends(get_current_user)):
-    pin = await db.pins.find_one({"id": pin_id}, {"_id": 0})
+    pin = await db.pins.find_one({"id": pin_id})
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
     if pin['user_id'] != current_user['id']:
         raise HTTPException(status_code=403, detail="Not authorized")
     
     # Delete associated media
-    media_items = await db.media.find({"pin_id": pin_id}, {"_id": 0}).to_list(1000)
+    media_items = await db.media.find({"pin_id": pin_id}).to_list(1000)
     for media in media_items:
         try:
             await fs.delete(ObjectId(media['file_id']))
@@ -431,7 +445,7 @@ async def delete_pin(pin_id: str, current_user: dict = Depends(get_current_user)
 # ===== Like Routes =====
 @api_router.post("/pins/{pin_id}/like")
 async def like_pin(pin_id: str, current_user: dict = Depends(get_current_user)):
-    pin = await db.pins.find_one({"id": pin_id}, {"_id": 0})
+    pin = await db.pins.find_one({"id": pin_id})
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
     
@@ -526,7 +540,7 @@ async def upload_media(
 
 @api_router.get("/pins/{pin_id}/media")
 async def get_media(pin_id: str, current_user: dict = Depends(get_current_user)):
-    media_list = await db.media.find({"pin_id": pin_id}, {"_id": 0}).to_list(1000)
+    media_list = await db.media.find({"pin_id": pin_id}).to_list(1000)
 
     # Convert GridFS files to base64
     result = []
@@ -540,6 +554,7 @@ async def get_media(pin_id: str, current_user: dict = Depends(get_current_user))
             base64_data = base64.b64encode(content).decode('utf-8')
             content_type = (grid_out.metadata or {}).get('content_type', 'image/jpeg')
             media['file_data'] = f"data:{content_type};base64,{base64_data}"
+            media.pop('_id', None)
             result.append(media)
             if i == 0 and base64_data:
                 logging.info(f"Sample base64 for media id {media['id']}: {base64_data[:30]}...")
@@ -556,7 +571,7 @@ async def get_media(pin_id: str, current_user: dict = Depends(get_current_user))
 
 @api_router.delete("/media/{media_id}")
 async def delete_media(media_id: str, current_user: dict = Depends(get_current_user)):
-    media = await db.media.find_one({"id": media_id}, {"_id": 0})
+    media = await db.media.find_one({"id": media_id})
     if not media:
         raise HTTPException(status_code=404, detail="Media not found")
     if media['user_id'] != current_user['id']:
@@ -581,7 +596,7 @@ async def send_friend_request(user_id: str, current_user: dict = Depends(get_cur
     if user_id == current_user['id']:
         raise HTTPException(status_code=400, detail="Cannot add yourself")
     
-    target_user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    target_user = await db.users.find_one({"id": user_id})
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
     
@@ -621,13 +636,21 @@ async def accept_friend_request(user_id: str, current_user: dict = Depends(get_c
 @api_router.get("/friends")
 async def get_friends(current_user: dict = Depends(get_current_user)):
     friend_ids = current_user.get('friends', [])
-    friends = await db.users.find({"id": {"$in": friend_ids}}, {"_id": 0, "password_hash": 0}).to_list(1000)
+    friends = await db.users.find({"id": {"$in": friend_ids}}).to_list(1000)
+    for f in friends:
+        f.pop('_id', None)
+        f.pop('password_hash', None)
+        f.pop('password', None)
     return friends
 
 @api_router.get("/friends/requests")
 async def get_friend_requests(current_user: dict = Depends(get_current_user)):
     request_ids = current_user.get('friend_requests', [])
-    requests = await db.users.find({"id": {"$in": request_ids}}, {"_id": 0, "password_hash": 0}).to_list(1000)
+    requests = await db.users.find({"id": {"$in": request_ids}}).to_list(1000)
+    for r in requests:
+        r.pop('_id', None)
+        r.pop('password_hash', None)
+        r.pop('password', None)
     return requests
 
 # ===== User Search =====
@@ -640,9 +663,12 @@ async def search_users(q: str, current_user: dict = Depends(get_current_user)):
                 {"email": {"$regex": q, "$options": "i"}}
             ],
             "id": {"$ne": current_user['id']}
-        },
-        {"_id": 0, "password_hash": 0}
+        }
     ).limit(20).to_list(20)
+    for u in users:
+        u.pop('_id', None)
+        u.pop('password_hash', None)
+        u.pop('password', None)
     return users
 
 # ===== Profile Picture Routes =====
@@ -674,7 +700,7 @@ async def upload_profile_picture(
 
 @api_router.get("/users/{user_id}/profile-picture")
 async def get_profile_picture(user_id: str):
-    user = await db.users.find_one({"id": user_id}, {"_id": 0, "profile_photo": 1})
+    user = await db.users.find_one({"id": user_id})
     if not user or not user.get('profile_photo'):
         raise HTTPException(status_code=404, detail="Profile picture not found")
 
@@ -696,7 +722,7 @@ async def send_message(message_data: MessageCreate, current_user: dict = Depends
         raise HTTPException(status_code=403, detail="Can only message friends")
 
     # Get recipient info
-    recipient = await db.users.find_one({"id": message_data.recipient_id}, {"_id": 0, "username": 1})
+    recipient = await db.users.find_one({"id": message_data.recipient_id})
     if not recipient:
         raise HTTPException(status_code=404, detail="Recipient not found")
 
@@ -724,9 +750,10 @@ async def get_messages(friend_id: str, current_user: dict = Depends(get_current_
                 {"sender_id": current_user['id'], "recipient_id": friend_id},
                 {"sender_id": friend_id, "recipient_id": current_user['id']}
             ]
-        },
-        {"_id": 0}
+        }
     ).sort("created_at", 1).to_list(1000)
+    for m in messages:
+        m.pop('_id', None)
 
     return messages
 
@@ -778,7 +805,9 @@ async def create_event(event_data: EventCreate, current_user: dict = Depends(get
 
 @api_router.get("/events")
 async def get_events(current_user: dict = Depends(get_current_user)):
-    events = await db.events.find({}, {"_id": 0}).sort("event_date", 1).to_list(1000)
+    events = await db.events.find({}).sort("event_date", 1).to_list(1000)
+    for e in events:
+        e.pop('_id', None)
     return events
 
 @api_router.get("/events/search")
@@ -791,12 +820,14 @@ async def search_events(q: str, current_user: dict = Depends(get_current_user)):
             {"location_name": {"$regex": q, "$options": "i"}}
         ]
     }
-    events = await db.events.find(query, {"_id": 0}).sort("event_date", 1).limit(50).to_list(50)
+    events = await db.events.find(query).sort("event_date", 1).limit(50).to_list(50)
+    for e in events:
+        e.pop('_id', None)
     return events
 
 @api_router.post("/events/{event_id}/attend")
 async def attend_event(event_id: str, current_user: dict = Depends(get_current_user)):
-    event = await db.events.find_one({"id": event_id}, {"_id": 0})
+    event = await db.events.find_one({"id": event_id})
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
     
@@ -817,16 +848,17 @@ async def get_trending(current_user: dict = Depends(get_current_user)):
         {"$match": {"privacy": "public"}},
         {"$addFields": {"like_count": {"$size": "$likes"}}},
         {"$sort": {"like_count": -1, "created_at": -1}},
-        {"$limit": 50},
-        {"$project": {"_id": 0}}
+        {"$limit": 50}
     ]
     trending = await db.pins.aggregate(pipeline).to_list(50)
+    for t in trending:
+        t.pop('_id', None)
     return trending
 
 @api_router.get("/discover/nearby")
 async def get_nearby(lat: float, lng: float, radius_km: float = 10, current_user: dict = Depends(get_current_user)):
     # Simple distance calculation (for production, use geospatial queries)
-    all_pins = await db.pins.find({"privacy": "public"}, {"_id": 0}).to_list(1000)
+    all_pins = await db.pins.find({"privacy": "public"}).to_list(1000)
     
     nearby = []
     for pin in all_pins:
