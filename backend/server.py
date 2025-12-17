@@ -121,6 +121,19 @@ security = HTTPBearer()
 async def health_check():
     return {"status": "ok", "message": "Backend is running"}
 
+
+@app.get("/api/health/db")
+async def db_health():
+    try:
+        await client.admin.command("ping")
+        return {"db": "ok"}
+    except Exception as e:
+        detail = str(e)
+        # Best-effort redaction in case driver includes URI in error text.
+        if mongo_url and mongo_url in detail:
+            detail = detail.replace(mongo_url, _redact_mongo_url(mongo_url))
+        return {"db": "error", "detail": detail}
+
 # Rely on CORSMiddleware to handle OPTIONS automatically for preflight requests
 
 # ===== Models =====
