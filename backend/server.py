@@ -14,6 +14,7 @@ import bcrypt
 import jwt
 from bson import ObjectId
 import base64
+from pymongo.errors import PyMongoError
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -47,7 +48,8 @@ client = AsyncIOMotorClient(
     serverSelectionTimeoutMS=5000,
     tls=True
 )
-db = client.mapmoments
+db_name = os.environ.get("DB_NAME") or "mapmoments"
+db = client[db_name]
 fs = AsyncIOMotorGridFSBucket(db)
 
 # JWT Configuration
@@ -240,6 +242,12 @@ async def register(user_data: UserCreate, response: Response):
         return {"token": token, "user": {"id": user.id, "username": user.username, "email": user.email}}
     except HTTPException:
         raise
+    except PyMongoError:
+        logger.exception("MongoDB error in /auth/register")
+        raise HTTPException(
+            status_code=503,
+            detail="Database unavailable. Check Atlas credentials (MONGO_URL password), IP allowlist, and authSource.",
+        )
     except Exception as e:
         logger.exception("Error in /auth/register")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -272,6 +280,12 @@ async def login(login_data: UserLogin, response: Response):
         return {"token": token, "user": {"id": user['id'], "username": user['username'], "email": user['email']}}
     except HTTPException:
         raise
+    except PyMongoError:
+        logger.exception("MongoDB error in /auth/login")
+        raise HTTPException(
+            status_code=503,
+            detail="Database unavailable. Check Atlas credentials (MONGO_URL password), IP allowlist, and authSource.",
+        )
     except Exception as e:
         logger.exception("Error in /auth/login")
         raise HTTPException(status_code=500, detail="Internal server error")
