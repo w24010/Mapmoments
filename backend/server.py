@@ -6,6 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 import os
 import logging
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional
 import uuid
@@ -40,12 +41,42 @@ def is_origin_allowed(origin: str) -> bool:
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "true").lower() in ("1", "true", "yes")
 
 # MongoDB connection
+def _redact_mongo_url(value: str) -> str:
+    if not value:
+        return value
+    try:
+        parts = urlsplit(value)
+        if not parts.netloc:
+            return "[invalid MONGO_URL]"
+
+        userinfo, _, hostinfo = parts.netloc.rpartition("@")
+        if not hostinfo:
+            hostinfo = parts.netloc
+            userinfo = ""
+
+        if userinfo and ":" in userinfo:
+            username = userinfo.split(":", 1)[0]
+            redacted_netloc = f"{username}:***@{hostinfo}"
+        elif userinfo:
+            redacted_netloc = f"{userinfo}@{hostinfo}"
+        else:
+            redacted_netloc = hostinfo
+
+        return urlunsplit((parts.scheme, redacted_netloc, parts.path, parts.query, parts.fragment))
+    except Exception:
+        return f"[unparseable MONGO_URL len={len(value)}]"
+
 mongo_url = os.environ.get('MONGO_URL')
 if not mongo_url:
     raise ValueError(
         "MONGO_URL environment variable is required. "
         "Set it to your MongoDB connection string (mongodb+srv://<user>:<password>@<cluster>/<db>?...)."
     )
+
+# Optional safety check (recommended for debugging): log the configured MONGO_URL.
+# Intentionally redacts credentials to avoid leaking secrets to logs.
+print("MONGO_URL =", _redact_mongo_url(mongo_url))
+
 client = AsyncIOMotorClient(
     mongo_url,
     serverSelectionTimeoutMS=5000,
