@@ -70,7 +70,7 @@ mongo_url = os.environ.get('MONGO_URL')
 if not mongo_url:
     raise ValueError(
         "MONGO_URL environment variable is required. "
-        "Set it to your MongoDB connection string (mongodb+srv://<user>:<password>@<cluster>/<db>?...)."
+        "Set it in your deployment environment (Render/Railway/Docker) and in local .env files, not in source code."
     )
 
 # Optional safety check (recommended for debugging): log the configured MONGO_URL.
