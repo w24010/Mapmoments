@@ -42,7 +42,10 @@ COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "true").lower() in ("1", "true",
 # MongoDB connection
 mongo_url = os.environ.get('MONGO_URL')
 if not mongo_url:
-    raise ValueError("MONGO_URL environment variable is required")
+    raise ValueError(
+        "MONGO_URL environment variable is required. "
+        "Set it to your MongoDB connection string (mongodb+srv://<user>:<password>@<cluster>/<db>?...)."
+    )
 client = AsyncIOMotorClient(
     mongo_url,
     serverSelectionTimeoutMS=5000,
