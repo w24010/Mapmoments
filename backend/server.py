@@ -79,10 +79,22 @@ print("MONGO_URL =", _redact_mongo_url(mongo_url))
 
 client = AsyncIOMotorClient(
     mongo_url,
-    serverSelectionTimeoutMS=5000,
+    serverSelectionTimeoutMS=20000,
     tls=True
 )
-db_name = os.environ.get("DB_NAME") or "mapmoments"
+
+# Allow specifying the database name either via DB_NAME or in the Mongo URI path.
+# Examples:
+#   mongodb+srv://.../mapmoments_db?retryWrites=true&w=majority
+#   DB_NAME=mapmoments_db
+db_name = os.environ.get("DB_NAME")
+if not db_name:
+    try:
+        parsed = urlsplit(mongo_url)
+        inferred = (parsed.path or "").lstrip("/")
+        db_name = inferred or "mapmoments"
+    except Exception:
+        db_name = "mapmoments"
 db = client[db_name]
 fs = AsyncIOMotorGridFSBucket(db)
 

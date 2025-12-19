@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 from pymongo import MongoClient
@@ -25,7 +26,14 @@ def _require_env(name: str) -> str:
 #   MONGO_URL="mongodb+srv://w24010_db_user:<password>@cluster0.dqlln5g.mongodb.net/?retryWrites=true&w=majority"
 MONGO_URL = os.environ.get("MONGO_URL") or os.environ.get("MONGO_URI") or _require_env("MONGO_URL")
 
-DB_NAME = os.environ.get("DB_NAME") or "mapmoments"
+DB_NAME = os.environ.get("DB_NAME")
+if not DB_NAME:
+    try:
+        parsed = urlsplit(MONGO_URL)
+        inferred = (parsed.path or "").lstrip("/")
+        DB_NAME = inferred or "mapmoments"
+    except Exception:
+        DB_NAME = "mapmoments"
 
 
 client = MongoClient(MONGO_URL, serverSelectionTimeoutMS=5000, tls=True)
